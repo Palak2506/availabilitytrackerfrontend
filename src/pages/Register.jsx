@@ -36,8 +36,19 @@ export default function Register() {
     <div className="min-h-screen bg-navy-950 flex items-center justify-center px-4 py-12">
       <div className="w-full max-w-md">
         <div className="bg-navy-900 border border-navy-700 rounded-xl p-8 shadow-xl">
-          <h1 className="text-2xl font-semibold text-white mb-2">Create account</h1>
-          <p className="text-slate-400 text-sm mb-6">Mentorque Availability</p>
+          <div className="flex flex-col items-center mb-6">
+  <img
+    src="/mentorque-logo.png.jpeg"
+    alt="MentorQue"
+    className="h-14 mb-3 object-contain"
+  />
+  <h1 className="text-2xl font-semibold text-white mb-1">
+    Register
+  </h1>
+  <p className="text-slate-400 text-sm">
+    Mentorque Availability
+  </p>
+</div>
           <form onSubmit={handleSubmit} className="space-y-4">
             {error && (
               <div className="text-red-400 text-sm bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">

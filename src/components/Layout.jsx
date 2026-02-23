@@ -19,17 +19,27 @@ export default function Layout() {
           {isAdminRoute && user?.role === "ADMIN" ? (
             <>
               <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  className="p-2 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-navy-800"
-                  aria-label="Menu"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                  </svg>
-                </button>
-                <span className="text-white font-medium">MentorQue Availability Tracker</span>
-              </div>
+  <button
+    type="button"
+    className="p-2 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-navy-800"
+    aria-label="Menu"
+  >
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+    </svg>
+  </button>
+
+  <div className="flex items-center gap-2">
+    <img
+      src="/mentorque-logo.png.jpeg"
+      alt="MentorQue"
+      className="h-8 w-8 object-contain"
+    />
+    <span className="text-white font-medium">
+      Mentorque Availability Tracker
+    </span>
+  </div>
+</div>
               <div className="flex items-center gap-4">
                 <span className="text-slate-400 text-sm">{user?.email}</span>
                 <span className="text-xs px-2 py-0.5 rounded bg-navy-700 text-slate-300">ADMIN</span>
@@ -44,7 +54,13 @@ export default function Layout() {
             </>
           ) : (
             <>
-              <nav className="flex items-center gap-6">
+  <div className="flex items-center gap-4">
+    <img
+      src="/mentorque-logo.png.jpeg"
+      alt="MentorQue"
+      className="h-8 w-8 object-contain"
+    />
+    <nav className="flex items-center gap-6">
                 <NavLink
                   to={user?.role === "MENTOR" ? "/mentor" : "/availability"}
                   className={({ isActive }) =>
@@ -64,6 +80,7 @@ export default function Layout() {
                   </NavLink>
                 )}
               </nav>
+              </div>
               <div className="flex items-center gap-4">
                 <span className="text-slate-400 text-sm">{user?.email}</span>
                 <span className="text-xs px-2 py-0.5 rounded bg-navy-700 text-slate-300">{user?.role}</span>
