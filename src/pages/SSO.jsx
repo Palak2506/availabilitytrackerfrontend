@@ -11,6 +11,8 @@ export default function SSO() {
     const userId = params.get("userId");
     const email = params.get("email");
 
+    
+
     console.log("[SSO] Parsed params:", { token, role, userId, email });
 
     // Resolve role, including admin tokens from main site (isAdmin flag) and USER role
