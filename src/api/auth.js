@@ -9,7 +9,7 @@ export async function login(data) {
 }
 
 export async function me() {
-  return api("GET", "/api/auth/me", null, { skipAuthRedirect: true });
+  return api("GET", `/api/auth/me?_=${Date.now()}`, null, { skipAuthRedirect: true });
 }
 
 export async function getGoogleAuthUrl() {

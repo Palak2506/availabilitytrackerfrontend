@@ -24,6 +24,8 @@ export async function api(method, path, body, options = {}) {
   const url = path.startsWith("http") ? path : `${API_URL}${path}`;
   const headers = {
     "Content-Type": "application/json",
+    "Cache-Control": "no-cache, no-store, must-revalidate", // ← add this
+    "Pragma": "no-cache",
     ...options.headers,
   };
   const token = getToken();
@@ -33,6 +35,7 @@ export async function api(method, path, body, options = {}) {
     method,
     headers,
     credentials: "include",
+       cache: "no-store",
     ...(body != null && { body: JSON.stringify(body) }),
     ...options,
   });
