@@ -44,7 +44,7 @@ export default function AvailabilityDashboard({ role = "USER" }) {
       const today = new Date();
       const base = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
       base.setUTCDate(base.getUTCDate() + weekOffset * 7);
-      const weekStartStr = getWeekStartStr(base);
+      const weekStartStr = base.toISOString().slice(0, 10);
       const res = await availabilityApi.getWeekly({ weekStart: weekStartStr });
       setData(res);
       // DO NOT call setToggles({}) here
