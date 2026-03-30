@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import * as availabilityApi from "../api/availability";
 import {
@@ -283,7 +284,7 @@ export default function Availability() {
             }`}
             aria-label="Previous week"
           >
-            ←
+            <ChevronLeft size={16} />
           </button>
           <span className="text-slate-400 font-medium text-sm text-center">
             Week of {formatDateLocal(gridStart, displayTimezone)}
@@ -294,7 +295,7 @@ export default function Availability() {
             className="rounded-full w-9 h-9 flex items-center justify-center border border-slate-700 bg-slate-800/50 text-slate-300 font-medium hover:bg-slate-800 hover:border-slate-600 transition shrink-0"
             aria-label="Next week"
           >
-            →
+            <ChevronRight size={16} />
           </button>
         </div>
 
