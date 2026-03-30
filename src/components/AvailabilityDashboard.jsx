@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
 import * as availabilityApi from "../api/availability";
+import * as usersApi from "../api/users";
 import {
   getWeekStartStr,
   formatDateLocal,
@@ -23,15 +24,29 @@ const ROLE_HEADINGS = {
   MENTOR: "Mentor Dashboard",
 };
 
+const USER_TAGS = [
+  { value: "tech", label: "Tech" },
+  { value: "non-tech", label: "Non-Tech" },
+  { value: "good-communication", label: "Good Communication" },
+  { value: "asks-a-lot-of-questions", label: "Asks Questions" },
+];
+
 export default function AvailabilityDashboard({ role = "USER" }) {
   const { user } = useAuth();
+  const [activeTab, setActiveTab] = useState("availability");
   const [displayTimezone, setDisplayTimezone] = useState(user?.timezone || "UTC");
-  const [weekOffset, setWeekOffset] = useState(0); // 0 = today..today+6, 1 = +7..+13, etc.
+  const [weekOffset, setWeekOffset] = useState(0);
   const [data, setData] = useState({ dates: [], availability: {} });
-  const [loading, setLoading] = useState(!user); // only show loading if no user yet
+  const [loading, setLoading] = useState(!user);
   const [saving, setSaving] = useState(false);
   const [toggles, setToggles] = useState({});
   const [error, setError] = useState("");
+  
+  // Profile state (for users)
+  const [profile, setProfile] = useState({ tags: [], description: "" });
+  const [editTags, setEditTags] = useState([]);
+  const [editDescription, setEditDescription] = useState("");
+  const [profileSaving, setProfileSaving] = useState(false);
 
   const [selectorDate, setSelectorDate] = useState("");
   const [selectorHour, setSelectorHour] = useState(0);
@@ -62,6 +77,23 @@ export default function AvailabilityDashboard({ role = "USER" }) {
   useEffect(() => {
     if (user) fetchWeekly();
   }, [fetchWeekly]);
+
+  // Load user profile (for USER role only)
+  useEffect(() => {
+    if (role === "USER" && user && activeTab === "profile") {
+      async function loadProfile() {
+        try {
+          const data = await usersApi.getProfile();
+          setProfile(data.user);
+          setEditTags(data.user.tags || []);
+          setEditDescription(data.user.description || "");
+        } catch (e) {
+          console.error("Failed to load profile:", e.message);
+        }
+      }
+      loadProfile();
+    }
+  }, [role, user, activeTab]);
 
   const isSlotEnabled = (dateStr, hour) => {
     const key = `${dateStr}-${hour}`;
@@ -121,6 +153,31 @@ export default function AvailabilityDashboard({ role = "USER" }) {
   };
 
   const hasChanges = Object.keys(toggles).length > 0;
+
+  const saveProfile = async () => {
+    if (role !== "USER") return;
+    setProfileSaving(true);
+    setError("");
+    try {
+      const data = await usersApi.updateProfile({
+        tags: editTags,
+        description: editDescription,
+      });
+      setProfile(data.user);
+      setProfileSaving(false);
+    } catch (e) {
+      setError(e.message || "Failed to save profile");
+      setProfileSaving(false);
+    }
+  };
+
+  const toggleProfileTag = (tagValue) => {
+    if (editTags.includes(tagValue)) {
+      setEditTags(editTags.filter(t => t !== tagValue));
+    } else {
+      setEditTags([...editTags, tagValue]);
+    }
+  };
 
   // Visible 7-day window: always today + weekOffset * 7, forward only
   const buildGridDates = () => {
@@ -193,9 +250,41 @@ export default function AvailabilityDashboard({ role = "USER" }) {
 
   return (
     <div className="space-y-6">
-      <header className="space-y-1">
-        <h1 className="text-2xl font-semibold text-white">{heading}</h1>
-        <p className="text-slate-400 font-medium">Manage your availability.</p>
+      <header className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold text-white">{heading}</h1>
+            <p className="text-slate-400 font-medium">
+              {role === "USER" && activeTab === "availability" && "Manage your availability."}
+              {role === "USER" && activeTab === "profile" && "Manage your profile and preferences."}
+              {role === "MENTOR" && "Manage your availability."}
+            </p>
+          </div>
+          {role === "USER" && (
+            <div className="flex gap-2">
+              <button
+                onClick={() => setActiveTab("availability")}
+                className={`px-4 py-2 rounded-lg font-medium transition ${
+                  activeTab === "availability"
+                    ? "bg-primary-600 text-white"
+                    : "bg-navy-800 text-slate-400 hover:text-white"
+                }`}
+              >
+                Availability
+              </button>
+              <button
+                onClick={() => setActiveTab("profile")}
+                className={`px-4 py-2 rounded-lg font-medium transition ${
+                  activeTab === "profile"
+                    ? "bg-primary-600 text-white"
+                    : "bg-navy-800 text-slate-400 hover:text-white"
+                }`}
+              >
+                My Profile
+              </button>
+            </div>
+          )}
+        </div>
       </header>
 
       {error && (
@@ -204,6 +293,59 @@ export default function AvailabilityDashboard({ role = "USER" }) {
         </div>
       )}
 
+      {/* Profile Tab (USER only) */}
+      {role === "USER" && activeTab === "profile" && (
+        <section className="w-full rounded-2xl bg-slate-900 border border-slate-800 p-6">
+          <h2 className="text-lg font-medium text-white mb-4">Profile Information</h2>
+          
+          {/* Tags */}
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-slate-300 mb-3">
+              Your Tags
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {USER_TAGS.map((option) => (
+                <button
+                  key={option.value}
+                  onClick={() => toggleProfileTag(option.value)}
+                  className={`px-3 py-1.5 rounded-full text-sm transition ${
+                    editTags.includes(option.value)
+                      ? "bg-primary-600 text-white"
+                      : "bg-navy-800 text-slate-400 hover:bg-navy-700"
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Description */}
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-slate-300 mb-2">
+              About You
+            </label>
+            <textarea
+              value={editDescription}
+              onChange={(e) => setEditDescription(e.target.value)}
+              rows={4}
+              className="w-full px-4 py-2.5 rounded-lg bg-navy-800 border border-navy-600 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
+              placeholder="Describe yourself, your background, and what you're looking for in a mentor..."
+            />
+          </div>
+
+          <button
+            onClick={saveProfile}
+            disabled={profileSaving}
+            className="px-6 py-2.5 rounded-lg bg-primary-600 hover:bg-primary-500 text-white font-medium transition disabled:opacity-50"
+          >
+            {profileSaving ? "Saving..." : "Save Profile"}
+          </button>
+        </section>
+      )}
+
+      {/* Availability Tab (shown for all roles, but hidden for USER when profile tab is active) */}
+      {role !== "USER" || activeTab === "availability" ? (
       <section className="w-full rounded-2xl bg-slate-900 border border-slate-800 p-4">
         <div className="flex flex-col gap-4 md:flex-row md:items-end md:gap-4">
           <div className="w-full md:w-40">
@@ -368,6 +510,7 @@ export default function AvailabilityDashboard({ role = "USER" }) {
           )}
         </div>
       </section>
+      )}
     </div>
   );
 }
