@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
-import { useAuth } from "../context/AuthContext";
+import { Check, X } from "lucide-react";
 import * as adminApi from "../api/admin";
 
 const TAG_OPTIONS = [
@@ -14,11 +13,23 @@ const TAG_OPTIONS = [
   { value: "non-tech", label: "Non-Tech" },
   { value: "career-coach", label: "Career Coach" },
   { value: "mock-interview", label: "Mock Interview" },
+  { value: "startup", label: "Startup" },
+  { value: "manager", label: "Manager" },
+  { value: "tech-lead", label: "Tech Lead" },
+];
+
+function getInitials(name) {
+  if (!name) return "?";
+  return name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
+}
+
+const AV_COLORS = [
+  { bg: "#EEF2FF", color: "#4338CA" },
+  { bg: "#ECFDF5", color: "#065F46" },
+  { bg: "#FFF7ED", color: "#9A3412" },
 ];
 
 export default function AdminMentors() {
-  const { user } = useAuth();
-  const navigate = useNavigate();
   const [mentors, setMentors] = useState([]);
   const [selectedMentor, setSelectedMentor] = useState(null);
   const [editTags, setEditTags] = useState([]);
@@ -27,6 +38,7 @@ export default function AdminMentors() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [syncing, setSyncing] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
 
   const loadMentors = useCallback(async () => {
     try {
@@ -37,17 +49,15 @@ export default function AdminMentors() {
     }
   }, []);
 
-  useEffect(() => {
-    loadMentors();
-  }, [loadMentors]);
+  useEffect(() => { loadMentors(); }, [loadMentors]);
 
-  const handleSelectMentor = (mentor) => {
+  const handleSelectMentor = useCallback((mentor) => {
     setSelectedMentor(mentor);
     setEditTags(mentor.tags || []);
     setEditDescription(mentor.description || "");
     setError("");
     setSuccess("");
-  };
+  }, []);
 
   const handleSaveMentor = async () => {
     if (!selectedMentor) return;
@@ -83,101 +93,177 @@ export default function AdminMentors() {
     }
   };
 
-  const toggleTag = (tagValue) => {
-    if (editTags.includes(tagValue)) {
-      setEditTags(editTags.filter(t => t !== tagValue));
-    } else {
-      setEditTags([...editTags, tagValue]);
-    }
-  };
+  const toggleTag = useCallback((tagValue) => {
+    setEditTags(prev =>
+      prev.includes(tagValue) ? prev.filter(t => t !== tagValue) : [...prev, tagValue]
+    );
+  }, []);
+
+  // Filter mentors based on search
+  const filteredMentors = mentors.filter(m => {
+    if (!searchQuery) return true;
+    const search = searchQuery.toLowerCase();
+    return (
+      m.name.toLowerCase().includes(search) ||
+      m.email.toLowerCase().includes(search) ||
+      (m.tags && m.tags.some(t => t.toLowerCase().includes(search)))
+    );
+  });
 
   return (
     <div className="max-w-6xl mx-auto">
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold text-white mb-2">Manage Mentors</h1>
-        <p className="text-slate-400">Edit mentor tags and descriptions. Changes automatically sync embeddings.</p>
+      {/* Page header */}
+      <div className="mb-5">
+        <div className="text-heading mb-1" style={{ color: 'var(--color-text-primary)' }}>
+          Manage Mentors
+        </div>
+        <div className="text-body" style={{ color: 'var(--color-text-secondary)' }}>
+          Edit mentor tags and descriptions for better AI matching.
+        </div>
       </div>
 
+      {/* Actions bar */}
+      <div className="flex justify-end mb-4">
+        <button
+          onClick={handleSyncEmbeddings}
+          disabled={syncing}
+          className="btn btn-primary"
+          style={{ fontSize: '13px', padding: '7px 16px' }}
+        >
+          {syncing ? "Syncing…" : "Sync All Embeddings"}
+        </button>
+      </div>
+
+      {/* Feedback banners */}
       {error && (
-        <div className="mb-4 p-4 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400">
-          {error}
+        <div className="mb-4 p-3 rounded-lg" style={{
+          background: 'var(--color-danger-bg)',
+          border: '0.5px solid var(--color-danger)',
+          color: 'var(--color-danger-dark)',
+        }}>
+          <X size={14} className="inline mr-1" /> {error}
         </div>
       )}
-
       {success && (
-        <div className="mb-4 p-4 bg-green-500/10 border border-green-500/30 rounded-lg text-green-400">
-          {success}
+        <div className="mb-4 p-3 rounded-lg" style={{
+          background: 'var(--color-success-bg)',
+          border: '0.5px solid var(--color-success)',
+          color: 'var(--color-success-dark)',
+        }}>
+          <Check size={14} className="inline mr-1" /> {success}
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Mentor List */}
-        <div className="bg-navy-900 border border-navy-700 rounded-xl p-6">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-lg font-medium text-white">Mentors</h2>
-            <button
-              onClick={handleSyncEmbeddings}
-              disabled={syncing}
-              className="px-3 py-1.5 text-sm bg-primary-600 hover:bg-primary-500 rounded-lg text-white transition disabled:opacity-50"
-            >
-              {syncing ? "Syncing..." : "Sync All Embeddings"}
-            </button>
+      {/* Two-column layout */}
+      <div className="grid" style={{ gridTemplateColumns: '400px 1fr', gap: '16px', alignItems: 'start' }}>
+
+        {/* Mentor list */}
+        <div className="rounded-xl overflow-hidden" style={{
+          background: 'var(--color-card)',
+          border: '0.5px solid var(--color-border)',
+        }}>
+          <div className="p-4 border-b flex items-center justify-between" style={{ borderColor: 'var(--color-border)' }}>
+            <div className="text-label" style={{ fontWeight: 500, color: 'var(--color-text-primary)' }}>
+              Mentors
+            </div>
+            <div className="text-mono" style={{ color: 'var(--color-text-tertiary)', fontSize: '11px' }}>
+              {filteredMentors.length} total
+            </div>
           </div>
-          <div className="space-y-2 max-h-[600px] overflow-y-auto">
-            {mentors.map((mentor) => (
-              <button
-                key={mentor.id}
-                onClick={() => handleSelectMentor(mentor)}
-                className={`w-full text-left p-3 rounded-lg border transition ${
-                  selectedMentor?.id === mentor.id
-                    ? "bg-primary-600/20 border-primary-500"
-                    : "bg-navy-800 border-navy-700 hover:border-navy-600"
-                }`}
-              >
-                <div className="font-medium text-white">{mentor.name}</div>
-                <div className="text-sm text-slate-400">{mentor.email}</div>
-                {mentor.tags?.length > 0 && (
-                  <div className="flex flex-wrap gap-1 mt-2">
-                    {mentor.tags.slice(0, 4).map((tag) => (
-                      <span key={tag} className="text-xs px-2 py-0.5 bg-navy-700 rounded-full text-slate-300">
-                        {tag}
-                      </span>
-                    ))}
-                    {mentor.tags.length > 4 && (
-                      <span className="text-xs px-2 py-0.5 bg-navy-700 rounded-full text-slate-300">
-                        +{mentor.tags.length - 4}
-                      </span>
-                    )}
+          <div className="max-h-[500px] overflow-y-auto">
+            {filteredMentors.map((mentor, i) => {
+              const av = AV_COLORS[i % AV_COLORS.length];
+              const isSelected = selectedMentor?.id === mentor.id;
+              return (
+                <button
+                  key={mentor.id}
+                  onClick={() => handleSelectMentor(mentor)}
+                  className="w-full text-left p-4 border-b transition"
+                  style={{
+                    borderColor: 'var(--color-border)',
+                    background: isSelected ? 'var(--color-accent-dim)' : 'var(--color-card)',
+                    borderLeft: isSelected ? '3px solid var(--color-accent)' : '3px solid transparent',
+                  }}
+                >
+                  <div className="flex items-center gap-3">
+                    <div style={{
+                      width: '36px', height: '36px', borderRadius: '50%',
+                      background: av.bg, color: av.color,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: '13px', fontWeight: 500, flexShrink: 0,
+                    }}>
+                      {getInitials(mentor.name)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-label" style={{ fontWeight: 500, color: 'var(--color-text-primary)' }}>
+                        {mentor.name}
+                      </div>
+                      <div className="text-mono" style={{ color: 'var(--color-text-tertiary)', fontSize: '10px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {mentor.email}
+                      </div>
+                      {mentor.tags?.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1.5">
+                          {mentor.tags.slice(0, 4).map((tag) => (
+                            <span key={tag} className="text-mono px-1.5 py-0.5 rounded-full" style={{ fontSize: '9px', background: 'var(--tag-tech-bg)', color: 'var(--tag-tech-text)' }}>
+                              {tag}
+                            </span>
+                          ))}
+                          {mentor.tags.length > 4 && (
+                            <span className="text-mono px-1.5 py-0.5 rounded-full" style={{ fontSize: '9px', background: 'var(--tag-neutral-bg)', color: 'var(--tag-neutral-text)' }}>
+                              +{mentor.tags.length - 4}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                )}
-              </button>
-            ))}
+                </button>
+              );
+            })}
           </div>
         </div>
 
-        {/* Edit Form */}
-        <div className="bg-navy-900 border border-navy-700 rounded-xl p-6">
+        {/* Edit form */}
+        <div className="rounded-xl p-5" style={{
+          background: 'var(--color-card)',
+          border: '0.5px solid var(--color-border)',
+        }}>
           {selectedMentor ? (
             <>
-              <h2 className="text-lg font-medium text-white mb-4">
-                Edit: {selectedMentor.name}
-              </h2>
+              <div className="flex items-center gap-3 mb-5">
+                <div style={{
+                  width: '44px', height: '44px', borderRadius: '50%',
+                  background: AV_COLORS[mentors.indexOf(selectedMentor) % AV_COLORS.length].bg,
+                  color: AV_COLORS[mentors.indexOf(selectedMentor) % AV_COLORS.length].color,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: '16px', fontWeight: 500,
+                }}>
+                  {getInitials(selectedMentor.name)}
+                </div>
+                <div>
+                  <div className="text-heading" style={{ color: 'var(--color-text-primary)', marginBottom: '2px' }}>
+                    {selectedMentor.name}
+                  </div>
+                  <div className="text-mono" style={{ color: 'var(--color-text-tertiary)', fontSize: '11px' }}>
+                    {selectedMentor.email}
+                  </div>
+                </div>
+              </div>
 
               {/* Tags */}
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-slate-300 mb-2">
-                  Tags
-                </label>
+              <div className="mb-5">
+                <div className="text-caption mb-3">Tags</div>
                 <div className="flex flex-wrap gap-2">
                   {TAG_OPTIONS.map((option) => (
                     <button
                       key={option.value}
                       onClick={() => toggleTag(option.value)}
-                      className={`px-3 py-1.5 rounded-full text-sm transition ${
-                        editTags.includes(option.value)
-                          ? "bg-primary-600 text-white"
-                          : "bg-navy-800 text-slate-400 hover:bg-navy-700"
-                      }`}
+                      className="text-label px-3 py-1.5 rounded-full transition"
+                      style={{
+                        border: editTags.includes(option.value) ? '1.5px solid var(--color-primary)' : '0.5px solid var(--color-border)',
+                        background: editTags.includes(option.value) ? 'var(--color-primary)' : 'var(--color-card)',
+                        color: editTags.includes(option.value) ? '#fff' : 'var(--color-text-secondary)',
+                      }}
                     >
                       {option.label}
                     </button>
@@ -186,30 +272,57 @@ export default function AdminMentors() {
               </div>
 
               {/* Description */}
-              <div className="mb-6">
-                <label className="block text-sm font-medium text-slate-300 mb-2">
-                  Description
-                </label>
+              <div className="mb-5">
+                <div className="text-caption mb-3">Description</div>
                 <textarea
                   value={editDescription}
                   onChange={(e) => setEditDescription(e.target.value)}
-                  rows={4}
-                  className="w-full px-4 py-2.5 rounded-lg bg-navy-800 border border-navy-600 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  placeholder="Describe the mentor's background, expertise, and what they can help with..."
+                  rows={5}
+                  className="input w-full"
+                  style={{ fontSize: '13px', padding: '12px', lineHeight: '1.6', resize: 'vertical' }}
+                  placeholder="Describe the mentor's background, expertise, and what they can help with…"
                 />
               </div>
 
-              <button
-                onClick={handleSaveMentor}
-                disabled={loading}
-                className="w-full py-2.5 rounded-lg bg-primary-600 hover:bg-primary-500 text-white font-medium transition disabled:opacity-50"
-              >
-                {loading ? "Saving..." : "Save Changes"}
-              </button>
+              {/* Actions */}
+              <div className="flex gap-2">
+                <button
+                  onClick={handleSaveMentor}
+                  disabled={loading}
+                  className="btn btn-primary"
+                  style={{ padding: '8px 20px' }}
+                >
+                  {loading ? "Saving…" : "Save changes"}
+                </button>
+                {success && (
+                  <span className="text-label" style={{ color: 'var(--color-success)', display: 'flex', alignItems: 'center' }}>
+                    <span className="flex items-center gap-1"><Check size={14} /> {success}</span>
+                  </span>
+                )}
+              </div>
             </>
           ) : (
-            <div className="h-full flex items-center justify-center text-slate-500">
-              Select a mentor to edit their profile
+            <div className="h-full min-h-[400px] flex items-center justify-center">
+              <div className="text-center">
+                <div style={{
+                  width: '48px', height: '48px', borderRadius: '50%',
+                  background: 'var(--color-border-light)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  margin: '0 auto 16px',
+                }}>
+                  <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="var(--color-text-tertiary)" strokeWidth="1.5">
+                    <path d="M12 7a3 3 0 11-6 0 3 3 0 016 0z"/>
+                    <path d="M4 14a5 5 0 0110 0"/>
+                    <path d="M14 12a3 3 0 00-3-3"/>
+                  </svg>
+                </div>
+                <div className="text-heading mb-1" style={{ color: 'var(--color-text-primary)' }}>
+                  Select a mentor
+                </div>
+                <div className="text-body" style={{ color: 'var(--color-text-secondary)' }}>
+                  Click a mentor on the left to edit their profile
+                </div>
+              </div>
             </div>
           )}
         </div>
