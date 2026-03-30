@@ -4,6 +4,10 @@ export async function login(data) {
   return post("/api/auth/login", data);
 }
 
+export async function register(data) {
+  return post("/api/auth/register", data);
+}
+
 export async function me() {
   return fetch("/api/auth/me", {
     headers: {
