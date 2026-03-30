@@ -31,7 +31,7 @@ export default function Layout() {
 
   const handleLogout = () => {
     logout();
-    navigate("/welcome");
+    navigate("/login");
   };
 
   return (
@@ -90,6 +90,24 @@ export default function Layout() {
                     {email}
                   </span>
                 )}
+                <nav className="flex items-center gap-4">
+                  <NavLink
+                    to="/admin"
+                    className={({ isActive }) =>
+                      `text-sm font-medium ${isActive ? "text-primary-400" : "text-slate-400 hover:text-slate-200"}`
+                    }
+                  >
+                    Book Call
+                  </NavLink>
+                  <NavLink
+                    to="/admin/mentors"
+                    className={({ isActive }) =>
+                      `text-sm font-medium ${isActive ? "text-primary-400" : "text-slate-400 hover:text-slate-200"}`
+                    }
+                  >
+                    Mentors
+                  </NavLink>
+                </nav>
                 <button
                   type="button"
                   onClick={handleLogout}
