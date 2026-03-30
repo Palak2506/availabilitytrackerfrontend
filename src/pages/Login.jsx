@@ -78,10 +78,7 @@ export default function Login() {
             </button>
           </form>
           <p className="mt-6 text-center text-slate-400 text-sm">
-            No account?{" "}
-            <Link to="/register" className="text-primary-400 hover:underline">
-              Register
-            </Link>
+            Contact admin to create your account
           </p>
         </div>
       </div>

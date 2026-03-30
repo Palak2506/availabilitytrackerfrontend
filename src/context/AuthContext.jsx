@@ -58,14 +58,6 @@ export function AuthProvider({ children }) {
     return u;
   }, [getStorage]);
 
-  const register = useCallback(async (data) => {
-    const { user: u, token } = await authApi.register(data);
-    const storage = getStorage();
-    storage.setItem("token", token);
-    setUser(u);
-    return u;
-  }, [getStorage]);
-
   const logout = useCallback(() => {
     for (const key of ["token", "userRole", "userId", "userEmail", "role", "user"]) {
       sessionStorage.removeItem(key);
@@ -75,7 +67,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout, refreshUser: loadUser }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, refreshUser: loadUser }}>
       {children}
     </AuthContext.Provider>
   );
