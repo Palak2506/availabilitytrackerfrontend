@@ -10,7 +10,7 @@ function clearAuthAndRedirectToWelcome(expired = false) {
     localStorage.removeItem(key);
   }
   const q = expired ? "?expired=1" : "";
-  window.location.href = `/welcome${q}`;
+  window.location.href = `/login${q}`;
 }
 
 function redirectToRoleDashboardOrWelcome() {
@@ -68,4 +68,5 @@ export async function api(method, path, body, options = {}) {
 
 export const get = (path) => api("GET", path);
 export const post = (path, body) => api("POST", path, body);
+export const patch = (path, body) => api("PATCH", path, body);
 export const del = (path) => api("DELETE", path);

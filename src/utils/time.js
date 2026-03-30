@@ -154,3 +154,35 @@ export function convertISTToUTC(utcDateStr, istHour) {
     utcHour: utcMoment.hour,
   };
 }
+
+/**
+ * Convert UTC time to local time string with timezone label.
+ */
+export function formatTimeWithTimezone(isoString, timezone = "UTC") {
+  const date = new Date(isoString);
+  
+  // Format for UTC
+  const utcTime = date.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: "UTC",
+  });
+  
+  // Format for IST
+  const istTime = date.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: "Asia/Kolkata",
+  });
+  
+  return { utc: utcTime, ist: istTime };
+}
+
+/**
+ * Get current time in both UTC and IST.
+ */
+export function getCurrentTimeInTimezones() {
+  return formatTimeWithTimezone(new Date().toISOString());
+}

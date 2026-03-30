@@ -3,23 +3,56 @@ import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Clock, Users, CalendarCheck } from "lucide-react";
 
-export default function Login() {
+const ROLES = [
+  {
+    value: "USER",
+    label: "I'm a mentee",
+    description: "Looking for guidance",
+    icon: (
+      <svg width="24" height="24" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2">
+        <path d="M10 7a3 3 0 11-6 0 3 3 0 016 0z"/>
+        <path d="M2 14a5 5 0 0110 0"/>
+      </svg>
+    ),
+  },
+  {
+    value: "MENTOR",
+    label: "I'm a mentor",
+    description: "Ready to guide others",
+    icon: (
+      <svg width="24" height="24" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2">
+        <path d="M10 7a3 3 0 11-6 0 3 3 0 016 0z"/>
+        <path d="M2 14a5 5 0 0110 0"/>
+        <path d="M12 7a3 3 0 00-3-3"/>
+        <path d="M14 12a3 3 0 00-3-3"/>
+      </svg>
+    ),
+  },
+];
+
+export default function Signup() {
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [role, setRole] = useState("USER");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
+  const { register } = useAuth();
   const navigate = useNavigate();
 
   async function handleSubmit(e) {
     e.preventDefault();
     setError("");
+    if (password.length < 6) {
+      setError("Password must be at least 6 characters");
+      return;
+    }
     setLoading(true);
     try {
-      await login(email, password);
+      await register({ name, email, password, role });
       navigate("/", { replace: true });
     } catch (err) {
-      setError(err.message || "Login failed");
+      setError(err.message || "Signup failed");
     } finally {
       setLoading(false);
     }
@@ -35,7 +68,7 @@ export default function Login() {
     }}>
       {/* Left — Hero / Brand panel */}
       <div style={{
-        flex: '1 1 55%',
+        flex: '1 1 50%',
         background: 'linear-gradient(145deg, #1A1A2E 0%, #2d2d4e 50%, #4338CA 100%)',
         display: 'flex',
         flexDirection: 'column',
@@ -45,7 +78,7 @@ export default function Login() {
         position: 'relative',
         overflow: 'hidden',
       }}>
-        {/* Subtle decorative shapes */}
+        {/* Decorative shapes */}
         <div style={{
           position: 'absolute',
           top: '-80px',
@@ -132,7 +165,7 @@ export default function Login() {
           ))}
         </div>
 
-        {/* Footer on hero */}
+        {/* Footer */}
         <div style={{
           position: 'absolute',
           bottom: '24px',
@@ -146,38 +179,17 @@ export default function Login() {
 
       {/* Right — Auth form */}
       <div style={{
-        flex: '1 1 45%',
+        flex: '1 1 50%',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: '40px 48px',
+        padding: '32px 40px',
         minWidth: '0',
+        overflowY: 'auto',
       }}>
-        <div style={{ width: '100%', maxWidth: '380px' }}>
-          {/* Mobile-only logo (hidden on desktop via media query) */}
-          <div className="auth-mobile-logo" style={{ display: 'none' }}>
-            <img
-              src="/mentorque-logo.png.jpeg"
-              alt="MentorQue"
-              style={{
-                width: '44px',
-                height: '44px',
-                borderRadius: '12px',
-                objectFit: 'cover',
-              }}
-            />
-            <span style={{
-              fontSize: '18px',
-              fontWeight: 500,
-              color: '#1A1A2E',
-              letterSpacing: '-0.02em',
-            }}>
-              MentorQue
-            </span>
-          </div>
-
+        <div style={{ width: '100%', maxWidth: '420px' }}>
           {/* Welcome section */}
-          <div style={{ marginBottom: '32px' }}>
+          <div style={{ marginBottom: '24px' }}>
             <div style={{
               fontSize: '24px',
               fontWeight: 300,
@@ -185,13 +197,13 @@ export default function Login() {
               letterSpacing: '-0.02em',
               marginBottom: '6px',
             }}>
-              Welcome back
+              Create your account
             </div>
             <div style={{
               fontSize: '13px',
               color: '#9CA3AF',
             }}>
-              Sign in to continue to your dashboard
+              Choose your role and get started
             </div>
           </div>
 
@@ -200,7 +212,7 @@ export default function Login() {
             background: '#fff',
             border: '0.5px solid #E5E5E3',
             borderRadius: '16px',
-            padding: '28px',
+            padding: '24px',
             boxShadow: '0 4px 24px rgba(26,26,46,0.06)',
           }}>
             {error && (
@@ -211,20 +223,86 @@ export default function Login() {
                 padding: '10px 14px',
                 fontSize: '13px',
                 color: '#991B1B',
-                marginBottom: '20px',
+                marginBottom: '16px',
               }}>
                 {error}
               </div>
             )}
 
-            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+            {/* Role selector */}
+            <div style={{ display: 'flex', gap: '10px', marginBottom: '18px' }}>
+              {ROLES.map((r) => (
+                <button
+                  key={r.value}
+                  type="button"
+                  onClick={() => setRole(r.value)}
+                  style={{
+                    flex: 1,
+                    padding: '12px 10px',
+                    borderRadius: '12px',
+                    border: role === r.value ? '2px solid #4338CA' : '1.5px solid #E5E5E3',
+                    background: role === r.value ? '#EEF2FF' : '#FAFAFA',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s',
+                    textAlign: 'center',
+                  }}
+                >
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'center',
+                    marginBottom: '6px',
+                    color: role === r.value ? '#4338CA' : '#9CA3AF',
+                  }}>
+                    {r.icon}
+                  </div>
+                  <div style={{
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    color: role === r.value ? '#4338CA' : '#1A1A2E',
+                    marginBottom: '2px',
+                  }}>
+                    {r.label}
+                  </div>
+                  <div style={{
+                    fontSize: '10px',
+                    color: role === r.value ? '#6366F1' : '#9CA3AF',
+                    lineHeight: '1.3',
+                  }}>
+                    {r.description}
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <div>
                 <label style={{
                   display: 'block',
                   fontSize: '12px',
                   fontWeight: 500,
                   color: '#6B7280',
-                  marginBottom: '6px',
+                  marginBottom: '5px',
+                  letterSpacing: '0.02em',
+                }}>
+                  Full name
+                </label>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  required
+                  className="input"
+                  style={{ width: '100%', fontSize: '14px', padding: '9px 14px' }}
+                  placeholder="John Doe"
+                />
+              </div>
+              <div>
+                <label style={{
+                  display: 'block',
+                  fontSize: '12px',
+                  fontWeight: 500,
+                  color: '#6B7280',
+                  marginBottom: '5px',
                   letterSpacing: '0.02em',
                 }}>
                   Email address
@@ -235,7 +313,7 @@ export default function Login() {
                   onChange={(e) => setEmail(e.target.value)}
                   required
                   className="input"
-                  style={{ width: '100%', fontSize: '14px', padding: '10px 14px' }}
+                  style={{ width: '100%', fontSize: '14px', padding: '9px 14px' }}
                   placeholder="you@example.com"
                 />
               </div>
@@ -245,7 +323,7 @@ export default function Login() {
                   fontSize: '12px',
                   fontWeight: 500,
                   color: '#6B7280',
-                  marginBottom: '6px',
+                  marginBottom: '5px',
                   letterSpacing: '0.02em',
                 }}>
                   Password
@@ -255,9 +333,10 @@ export default function Login() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
+                  minLength={6}
                   className="input"
-                  style={{ width: '100%', fontSize: '14px', padding: '10px 14px' }}
-                  placeholder="••••••••"
+                  style={{ width: '100%', fontSize: '14px', padding: '9px 14px' }}
+                  placeholder="At least 6 characters"
                 />
               </div>
               <button
@@ -273,49 +352,33 @@ export default function Login() {
                   cursor: loading ? 'not-allowed' : 'pointer',
                 }}
               >
-                {loading ? "Signing in…" : "Sign in"}
+                {loading ? "Creating account…" : `Sign up as ${role === "MENTOR" ? "Mentor" : "Mentee"}`}
               </button>
             </form>
 
             <div style={{
-              marginTop: '20px',
-              paddingTop: '20px',
+              marginTop: '16px',
+              paddingTop: '16px',
               borderTop: '0.5px solid #F1F0EE',
               fontSize: '13px',
               color: '#9CA3AF',
               textAlign: 'center',
             }}>
-              Don't have an account?{" "}
+              Already have an account?{" "}
               <Link
-                to="/signup"
+                to="/login"
                 style={{
                   color: '#4338CA',
                   fontWeight: 500,
                   textDecoration: 'none',
                 }}
               >
-                Sign up
+                Sign in
               </Link>
             </div>
           </div>
         </div>
       </div>
-
-      {/* Responsive style block */}
-      <style>{`
-        @media (max-width: 768px) {
-          /* Stack vertically on mobile/tablet */
-          div:has(> .auth-mobile-logo) {
-            flex: unset !important;
-          }
-          .auth-mobile-logo {
-            display: flex !important;
-            align-items: center;
-            gap: 12px;
-            margin-bottom: 24px;
-          }
-        }
-      `}</style>
     </div>
   );
 }

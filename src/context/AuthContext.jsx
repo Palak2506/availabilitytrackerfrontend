@@ -58,8 +58,8 @@ export function AuthProvider({ children }) {
     return u;
   }, [getStorage]);
 
-  const register = useCallback(async (data) => {
-    const { user: u, token } = await authApi.register(data);
+  const register = useCallback(async ({ name, email, password, role }) => {
+    const { user: u, token } = await authApi.register({ name, email, password, role });
     const storage = getStorage();
     storage.setItem("token", token);
     setUser(u);
