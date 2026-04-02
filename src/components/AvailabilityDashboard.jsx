@@ -2,6 +2,9 @@ import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
 import * as availabilityApi from "../api/availability";
 import WeeklyCalendarGrid from "./WeeklyCalendarGrid";
+import Button from "./Button";
+import Badge, { StatusBadge } from "./Badge";
+import { Spinner } from "./LoadingSkeleton";
 import {
   getWeekStartStr,
   formatDateLocal,
@@ -232,17 +235,17 @@ export default function AvailabilityDashboard({ role = "USER" }) {
       )}
 
       {/* Controls Section */}
-      <section className="grid grid-cols-1 md:grid-cols-2 gap-4 rounded-xl bg-slate-900/50 border border-slate-800 p-5">
+      <section className="grid grid-cols-1 md:grid-cols-2 gap-4 rounded-xl bg-slate-900/50 border border-slate-800 p-6 space-y-4 md:space-y-0">
         {/* Timezone Selector */}
-        <div>
-          <label htmlFor="timezone-select" className="block text-sm font-semibold text-slate-300 mb-2">
+        <div className="space-y-2">
+          <label htmlFor="timezone-select" className="block text-sm font-semibold text-slate-300">
             🌍 Timezone
           </label>
           <select
             id="timezone-select"
             value={displayTimezone}
             onChange={(e) => setDisplayTimezone(e.target.value)}
-            className="w-full rounded-lg bg-slate-950 border border-slate-700 text-white font-medium px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+            className="w-full rounded-lg bg-slate-950 border border-slate-700 text-white font-medium px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-smooth"
           >
             {TIMEZONE_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
@@ -253,35 +256,31 @@ export default function AvailabilityDashboard({ role = "USER" }) {
         </div>
 
         {/* Week Navigation */}
-        <div>
-          <label className="block text-sm font-semibold text-slate-300 mb-2">
+        <div className="space-y-2">
+          <label className="block text-sm font-semibold text-slate-300">
             📅 Week
           </label>
-          <div className="flex items-center gap-2 bg-slate-950 rounded-lg border border-slate-700 p-2.5">
+          <div className="flex items-center gap-2 bg-slate-950 rounded-lg border border-slate-700 p-2">
             <button
               type="button"
               onClick={prevWeek}
               disabled={weekOffset === 0}
               title="Previous week"
-              className={`p-2 rounded-lg transition ${
-                weekOffset === 0
-                  ? "opacity-40 cursor-not-allowed text-slate-500"
-                  : "hover:bg-slate-800 text-slate-300 hover:text-slate-100"
-              }`}
+              className="px-3 py-2 rounded-lg transition-smooth disabled:opacity-40 disabled:cursor-not-allowed text-slate-300 disabled:text-slate-500 hover:bg-slate-800"
               aria-label="Previous week"
             >
               ← Prev
             </button>
 
-            <div className="flex-1 text-center text-sm font-medium text-slate-300 px-2 whitespace-nowrap">
-              {formatDateLocal(gridStart, displayTimezone)} +6 days
+            <div className="flex-1 text-center text-sm font-medium text-slate-300">
+              {formatDateLocal(gridStart, displayTimezone)}
             </div>
 
             <button
               type="button"
               onClick={nextWeek}
               title="Next week"
-              className="p-2 rounded-lg hover:bg-slate-800 text-slate-300 hover:text-slate-100 transition"
+              className="px-3 py-2 rounded-lg transition-smooth text-slate-300 hover:bg-slate-800"
               aria-label="Next week"
             >
               Next →
@@ -292,18 +291,14 @@ export default function AvailabilityDashboard({ role = "USER" }) {
 
       {/* Calendar Grid Section */}
       <section className="space-y-4">
-        <div className="flex items-start justify-between gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
             <h2 className="text-lg font-semibold text-white">📅 Your Availability</h2>
             <p className="text-slate-400 text-sm mt-1">Click slots to mark availability</p>
           </div>
-          <div className={`text-xs px-3 py-1.5 rounded-full font-semibold ${
-            hasChanges
-              ? "bg-orange-500/20 text-orange-400 border border-orange-500/30"
-              : "bg-slate-800/50 text-slate-400 border border-slate-700"
-          }`}>
-            {hasChanges ? `${Object.keys(toggles).length} changes` : "No changes"}
-          </div>
+          {hasChanges && (
+            <Badge variant="warning" size="sm" text={`${Object.keys(toggles).length} pending changes`} />
+          )}
         </div>
 
         <WeeklyCalendarGrid
@@ -320,37 +315,31 @@ export default function AvailabilityDashboard({ role = "USER" }) {
       {/* Action Buttons */}
       {hasChanges && (
         <section className="flex gap-3 sticky bottom-0 bg-slate-950/95 border-t border-slate-800 p-4 -m-6 mt-6 pt-4 backdrop-blur-sm rounded-b-2xl">
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="md"
             onClick={cancelChanges}
             disabled={saving}
-            className="flex-1 rounded-lg border border-slate-600 bg-transparent text-slate-300 font-medium px-6 py-3 hover:bg-slate-800/50 hover:border-slate-500 transition disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex-1"
           >
-            ✕ Discard Changes
-          </button>
-          <button
-            type="button"
+            ✕ Discard
+          </Button>
+          <Button
+            variant="primary"
+            size="md"
+            loading={saving}
+            loadingText="Saving..."
             onClick={saveBatch}
-            disabled={saving}
-            className="flex-1 rounded-lg bg-green-600 hover:bg-green-500 text-white font-semibold px-6 py-3 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            className="flex-1"
           >
-            {saving ? (
-              <>
-                <div className="w-4 h-4 animate-spin rounded-full border-2 border-white border-t-green-400" />
-                Saving...
-              </>
-            ) : (
-              <>
-                ✓ Save Availability
-              </>
-            )}
-          </button>
+            ✓ Save Changes
+          </Button>
         </section>
       )}
 
       {!hasChanges && !loading && (
-        <div className="text-center py-8 text-slate-500 text-sm">
-          ✓ All changes saved
+        <div className="text-center py-8">
+          <Badge variant="success" size="md" text="✓ All changes saved" />
         </div>
       )}
     </div>
