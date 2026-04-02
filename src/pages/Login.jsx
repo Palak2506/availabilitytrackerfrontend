@@ -15,8 +15,16 @@ export default function Login() {
     setError("");
     setLoading(true);
     try {
-      await login(email, password);
-      navigate("/", { replace: true });
+      const user = await login(email, password);
+      
+      // Redirect based on role
+      if (user.role === "ADMIN") {
+        navigate("/admin", { replace: true });
+      } else if (user.role === "MENTOR") {
+        navigate("/mentor", { replace: true });
+      } else {
+        navigate("/user", { replace: true });
+      }
     } catch (err) {
       setError(err.message || "Login failed");
     } finally {

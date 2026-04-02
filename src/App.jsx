@@ -8,109 +8,126 @@ import MentorAvailability from "./pages/MentorAvailability";
 import AdminDashboard from "./pages/AdminDashboard";
 import AdminSettings from "./pages/AdminSettings";
 
-const LOGIN_PATH = "/login";
+/**
+ * LoadingScreen - Show while auth state is loading
+ */
+function LoadingScreen() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-navy-950">
+      <div className="text-slate-400">Loading...</div>
+    </div>
+  );
+}
 
-function ProtectedRoute({ children, allowedRoles }) {
+/**
+ * ProtectedRoute - Guard routes with auth and role checks
+ * 
+ * @param {ReactNode} children - Route component to render
+ * @param {string[]} allowedRoles - Array of roles that can access this route
+ * @param {string} fallbackPath - Path to redirect if access denied (default: /login)
+ */
+function ProtectedRoute({ children, allowedRoles = [], fallbackPath = "/login" }) {
   const { user, loading } = useAuth();
   const location = useLocation();
-  const loginTo = location.search ? `${LOGIN_PATH}${location.search}` : LOGIN_PATH;
 
+  // Show loading while auth state is being determined
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-navy-950">
-        <div className="text-slate-400">Loading...</div>
-      </div>
-    );
+    return <LoadingScreen />;
   }
 
+  // Not authenticated - redirect to login
   if (!user) {
-    return <Navigate to={loginTo} replace />;
+    return <Navigate to={fallbackPath} replace state={{ from: location }} />;
   }
 
-  if (allowedRoles && allowedRoles.length > 0 && !allowedRoles.includes(user.role)) {
-    return <Navigate to="/" replace />;
+  // Authenticated but wrong role - redirect to fallback
+  if (allowedRoles.length > 0 && !allowedRoles.includes(user.role)) {
+    return <Navigate to={fallbackPath} replace />;
   }
 
-  return children;
-}
-
-function DefaultRedirect() {
-  const { user, loading } = useAuth();
-  const location = useLocation();
-  const loginTo = location.search ? `${LOGIN_PATH}${location.search}` : LOGIN_PATH;
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-navy-950">
-        <div className="text-slate-400">Loading...</div>
-      </div>
-    );
-  }
-  if (!user) return <Navigate to={loginTo} replace />;
-  if (user.role === "MENTOR") return <Navigate to="/mentor" replace />;
-  if (user.role === "ADMIN") return <Navigate to="/admin" replace />;
-  return <Navigate to="/availability" replace />;
-}
-
-function NormalizePathname({ children }) {
-  const location = useLocation();
-  const pathname = location.pathname;
-  if (pathname.startsWith("//")) {
-    const fixed = pathname.replace(/\/+/g, "/") + location.search;
-    return <Navigate to={fixed} replace />;
-  }
+  // Authenticated and authorized - render route
   return children;
 }
 
 export default function App() {
   return (
-    <NormalizePathname>
-      <Routes>
-        <Route path={LOGIN_PATH} element={<Login />} />
-        <Route path="/register" element={<Register />} />
+    <Routes>
+      {/* Public Routes */}
+      <Route path="/login" element={<Login />} />
+      <Route path="/register" element={<Register />} />
+
+      {/* Role-based Dashboards */}
       <Route
-        path="/"
+        path="/user/*"
         element={
-          <ProtectedRoute>
-            <Layout />
+          <ProtectedRoute allowedRoles={["USER", "ADMIN"]}>
+            <Layout>
+              <Routes>
+                <Route path="/" element={<UserAvailability />} />
+                <Route path="*" element={<Navigate to="/user" replace />} />
+              </Routes>
+            </Layout>
           </ProtectedRoute>
         }
-      >
-        <Route index element={<DefaultRedirect />} />
-        <Route
-          path="availability"
-          element={
-            <ProtectedRoute allowedRoles={["USER", "ADMIN"]}>
-              <UserAvailability />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="mentor"
-          element={
-            <ProtectedRoute allowedRoles={["MENTOR"]}>
-              <MentorAvailability />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="admin"
-          element={
-            <ProtectedRoute allowedRoles={["ADMIN"]}>
-              <AdminDashboard />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="admin/settings"
-          element={
-            <ProtectedRoute allowedRoles={["ADMIN"]}>
-              <AdminSettings />
-            </ProtectedRoute>
-          }
-        />
-      </Route>
+      />
+
+      <Route
+        path="/mentor/*"
+        element={
+          <ProtectedRoute allowedRoles={["MENTOR"]}>
+            <Layout>
+              <Routes>
+                <Route path="/" element={<MentorAvailability />} />
+                <Route path="*" element={<Navigate to="/mentor" replace />} />
+              </Routes>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/admin/*"
+        element={
+          <ProtectedRoute allowedRoles={["ADMIN"]}>
+            <Layout>
+              <Routes>
+                <Route path="/" element={<AdminDashboard />} />
+                <Route path="settings" element={<AdminSettings />} />
+                <Route path="*" element={<Navigate to="/admin" replace />} />
+              </Routes>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Catch-all & redirects */}
+      <Route path="/" element={<RootRedirect />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
-    </NormalizePathname>
   );
+}
+
+/**
+ * RootRedirect - Handle / path by redirecting based on auth state
+ */
+function RootRedirect() {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return <LoadingScreen />;
+  }
+
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+
+  // Route to role-specific dashboard
+  if (user.role === "ADMIN") {
+    return <Navigate to="/admin" replace />;
+  }
+  if (user.role === "MENTOR") {
+    return <Navigate to="/mentor" replace />;
+  }
+  // USER and others
+  return <Navigate to="/user" replace />;
 }
