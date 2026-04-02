@@ -90,7 +90,11 @@ export default function AdminDashboard() {
     setLoadingUserAvail(true);
     setError("");
     try {
-      const data = await availabilityApi.getWeekly({ userId: selectedUser.id, weekStart });
+      const data = await adminApi.getAvailabilityForEntity(
+        selectedUser.id,
+        "USER",
+        weekStart
+      );
       setUserAvailability(data);
     } catch (e) {
       setError(e.message || "Failed to load user availability");
@@ -108,7 +112,11 @@ export default function AdminDashboard() {
     setLoadingMentorAvail(true);
     setError("");
     try {
-      const data = await availabilityApi.getWeekly({ mentorId: selectedMentor.id, weekStart });
+      const data = await adminApi.getAvailabilityForEntity(
+        selectedMentor.id,
+        "MENTOR",
+        weekStart
+      );
       setMentorAvailability(data);
     } catch (e) {
       setError(e.message || "Failed to load mentor availability");
@@ -224,8 +232,10 @@ export default function AdminDashboard() {
   const checkOverlap = useCallback(async () => {
     if (!availabilityTarget || !scheduleStartIso || !scheduleEndIso) return;
     try {
-      const slots = await adminApi.getOverlappingSlots(
+      const entityType = selectedUser ? "USER" : selectedMentor ? "MENTOR" : "USER";
+      const slots = await adminApi.getOverlappingSlotsForEntity(
         availabilityTarget.id,
+        entityType,
         scheduleStartIso,
         scheduleEndIso
       );
@@ -233,7 +243,7 @@ export default function AdminDashboard() {
     } catch {
       setOverlapSlots([]);
     }
-  }, [availabilityTarget, scheduleStartIso, scheduleEndIso]);
+  }, [availabilityTarget, scheduleStartIso, scheduleEndIso, selectedUser, selectedMentor]);
 
   useEffect(() => {
     if (scheduleStartIso && scheduleEndIso && availabilityTarget?.id) checkOverlap();

@@ -45,7 +45,8 @@ export default function AvailabilityDashboard({ role = "USER" }) {
       const base = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
       base.setUTCDate(base.getUTCDate() + weekOffset * 7);
       const weekStartStr = base.toISOString().slice(0, 10);
-      const res = await availabilityApi.getWeekly({ weekStart: weekStartStr });
+      const entity = { entity_id: user.id, entity_type: role === "MENTOR" ? "MENTOR" : "USER" };
+      const res = await availabilityApi.getWeekly({ weekStart: weekStartStr, ...entity });
       setData(res);
       // DO NOT call setToggles({}) here
     } catch (e) {
@@ -110,7 +111,24 @@ export default function AvailabilityDashboard({ role = "USER" }) {
       return;
     }
     try {
-      await availabilityApi.saveBatch(slots);
+      // Deduplicate slots with same start/end for this entity before sending
+      const dedupeSlots = (input) => {
+        const m = new Map();
+        for (const s of input) {
+          const k = `${s.startTime}|${s.endTime}`;
+          if (!m.has(k)) m.set(k, { ...s });
+          else {
+            const ex = m.get(k);
+            ex.enabled = ex.enabled || s.enabled; // if any says enabled, keep enabled
+            m.set(k, ex);
+          }
+        }
+        return Array.from(m.values());
+      };
+
+      const payload = dedupeSlots(slots);
+      const entity = { entity_id: user.id, entity_type: role === "MENTOR" ? "MENTOR" : "USER" };
+      await availabilityApi.saveBatch(payload, entity);
       await fetchWeekly();
       setToggles({});
     } catch (e) {
@@ -161,14 +179,11 @@ export default function AvailabilityDashboard({ role = "USER" }) {
     setSaving(true);
     setError("");
     try {
+      const entity = { entity_id: user.id, entity_type: role === "MENTOR" ? "MENTOR" : "USER" };
+      // dedupe single slot batch is trivial but keep shape consistent
       await availabilityApi.saveBatch([
-        {
-          date: selectorDate,
-          startTime,
-          endTime,
-          enabled: true,
-        },
-      ]);
+        { date: selectorDate, startTime, endTime, enabled: true },
+      ], entity);
       await fetchWeekly();
     } catch (e) {
       setError(e.message || "Failed to save");
