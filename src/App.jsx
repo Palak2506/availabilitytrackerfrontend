@@ -4,10 +4,13 @@ import Layout from "./components/Layout";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import UserAvailability from "./pages/UserAvailability";
+import UserCalls from "./pages/UserCalls";
 import MentorAvailability from "./pages/MentorAvailability";
+import MentorCalls from "./pages/MentorCalls";
 import AdminDashboard from "./pages/AdminDashboard";
 import AdminScheduling from "./pages/AdminScheduling";
 import AdminSettings from "./pages/AdminSettings";
+import AdminCalls from "./pages/AdminCalls";
 
 /**
  * LoadingScreen - Show while auth state is loading
@@ -65,6 +68,7 @@ export default function App() {
             <Layout>
               <Routes>
                 <Route path="/" element={<UserAvailability />} />
+                <Route path="calls" element={<UserCalls />} />
                 <Route path="*" element={<Navigate to="/user" replace />} />
               </Routes>
             </Layout>
@@ -79,6 +83,7 @@ export default function App() {
             <Layout>
               <Routes>
                 <Route path="/" element={<MentorAvailability />} />
+                <Route path="calls" element={<MentorCalls />} />
                 <Route path="*" element={<Navigate to="/mentor" replace />} />
               </Routes>
             </Layout>
@@ -95,6 +100,7 @@ export default function App() {
                 <Route path="/" element={<AdminDashboard />} />
                 <Route path="settings" element={<AdminSettings />} />
                 <Route path="scheduling" element={<AdminScheduling />} />
+                <Route path="calls" element={<AdminCalls />} />
                 <Route path="*" element={<Navigate to="/admin" replace />} />
               </Routes>
             </Layout>

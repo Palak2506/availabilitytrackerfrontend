@@ -63,46 +63,82 @@ export default function Layout({ children }) {
                   className="h-8 w-8 object-contain"
                 />
                 <nav className="flex items-center gap-6">
-                  {/* User Availability Link */}
+                  {/* User Links */}
                   {(user?.role === "USER" || user?.role === "ADMIN") && (
-                    <NavLink
-                      to="/user"
-                      className={({ isActive }) =>
-                        `text-sm font-medium transition ${
-                          isActive ? "text-primary-400" : "text-slate-400 hover:text-slate-200"
-                        }`
-                      }
-                    >
-                      My Availability
-                    </NavLink>
+                    <>
+                      <NavLink
+                        to="/user"
+                        className={({ isActive }) =>
+                          `text-sm font-medium transition ${
+                            isActive ? "text-primary-400" : "text-slate-400 hover:text-slate-200"
+                          }`
+                        }
+                      >
+                        My Availability
+                      </NavLink>
+                      <NavLink
+                        to="/user/calls"
+                        className={({ isActive }) =>
+                          `text-sm font-medium transition ${
+                            isActive ? "text-primary-400" : "text-slate-400 hover:text-slate-200"
+                          }`
+                        }
+                      >
+                        My Calls
+                      </NavLink>
+                    </>
                   )}
                   
-                  {/* Mentor Link */}
+                  {/* Mentor Links */}
                   {user?.role === "MENTOR" && (
-                    <NavLink
-                      to="/mentor"
-                      className={({ isActive }) =>
-                        `text-sm font-medium transition ${
-                          isActive ? "text-primary-400" : "text-slate-400 hover:text-slate-200"
-                        }`
-                      }
-                    >
-                      My Availability
-                    </NavLink>
+                    <>
+                      <NavLink
+                        to="/mentor"
+                        className={({ isActive }) =>
+                          `text-sm font-medium transition ${
+                            isActive ? "text-primary-400" : "text-slate-400 hover:text-slate-200"
+                          }`
+                        }
+                      >
+                        My Availability
+                      </NavLink>
+                      <NavLink
+                        to="/mentor/calls"
+                        className={({ isActive }) =>
+                          `text-sm font-medium transition ${
+                            isActive ? "text-primary-400" : "text-slate-400 hover:text-slate-200"
+                          }`
+                        }
+                      >
+                        My Calls
+                      </NavLink>
+                    </>
                   )}
                   
-                  {/* Admin Link */}
+                  {/* Admin Links */}
                   {user?.role === "ADMIN" && (
-                    <NavLink
-                      to="/admin"
-                      className={({ isActive }) =>
-                        `text-sm font-medium transition ${
-                          isActive ? "text-primary-400" : "text-slate-400 hover:text-slate-200"
-                        }`
-                      }
-                    >
-                      Admin
-                    </NavLink>
+                    <>
+                      <NavLink
+                        to="/admin"
+                        className={({ isActive }) =>
+                          `text-sm font-medium transition ${
+                            isActive ? "text-primary-400" : "text-slate-400 hover:text-slate-200"
+                          }`
+                        }
+                      >
+                        Admin
+                      </NavLink>
+                      <NavLink
+                        to="/admin/calls"
+                        className={({ isActive }) =>
+                          `text-sm font-medium transition ${
+                            isActive ? "text-primary-400" : "text-slate-400 hover:text-slate-200"
+                          }`
+                        }
+                      >
+                        All Calls
+                      </NavLink>
+                    </>
                   )}
                 </nav>
               </div>
