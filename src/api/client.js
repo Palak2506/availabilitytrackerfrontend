@@ -12,10 +12,8 @@ function clearAuthAndRedirectToLogin(expired = false) {
 }
 
 function redirectToRoleDashboardOrLogin() {
-  const role = localStorage.getItem("userRole");
-  const path =
-    role === "ADMIN" ? "/admin" : role === "MENTOR" ? "/mentor" : "/availability";
-  window.location.href = path;
+  // Redirect to default login - role validation happens on protected routes
+  window.location.href = "/login";
 }
 
 export async function api(method, path, body, options = {}) {
