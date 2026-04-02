@@ -22,6 +22,9 @@ export async function getOverlappingSlots(userId, startTime, endTime) {
   return get(`/api/admin/availability/${userId}/overlap?${q}`);
 }
 
+/**
+ * @deprecated Use callsApi.bookCall() instead
+ */
 export async function scheduleMeeting(data) {
   return post("/api/admin/meetings", data);
 }

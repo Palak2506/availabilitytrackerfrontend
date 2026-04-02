@@ -3,7 +3,7 @@ import { DateTime } from "luxon";
 import { useAuth } from "../context/AuthContext";
 import * as adminApi from "../api/admin";
 import * as availabilityApi from "../api/availability";
-import * as meetingsApi from "../api/meetings";
+import * as callsApi from "../api/calls";
 import {
   formatDateLocal,
   formatSlotLabel,
@@ -118,9 +118,9 @@ export default function AdminDashboard() {
     }
   }, [selectedMentor, weekStart, emptyAvailability]);
 
-  const loadMeetings = useCallback(async () => {
+  const loadCalls = useCallback(async () => {
     try {
-      const list = await meetingsApi.listMeetings();
+      const list = await callsApi.listCalls();
       setMeetings(list);
     } catch {
       setMeetings([]);
@@ -143,8 +143,8 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     loadUsers();
-    loadMeetings();
-  }, [loadUsers, loadMeetings]);
+    loadCalls();
+  }, [loadUsers, loadCalls]);
 
   useEffect(() => {
     if (!selectedUser) {
@@ -250,7 +250,7 @@ export default function AdminDashboard() {
     setScheduleInlineError("");
     setSuccess("");
     if (!scheduleTitle.trim()) {
-      setScheduleInlineError("Meeting name is required.");
+      setScheduleInlineError("Call name is required.");
       return;
     }
     if (!scheduleDate) {
@@ -283,7 +283,7 @@ export default function AdminDashboard() {
       const startTime = scheduleStartDt.toFormat("HH:mm");
       const endTime = scheduleEndDt.toFormat("HH:mm");
       const timezone = displayTimezone === "IST" ? "Asia/Kolkata" : "UTC";
-      await adminApi.scheduleMeeting({
+      await callsApi.bookCall({
         title: scheduleTitle.trim(),
         date,
         startTime,
@@ -291,7 +291,7 @@ export default function AdminDashboard() {
         timezone,
         participantEmails: getParticipantEmails(),
       });
-      setSuccess("Meeting scheduled. Meet link will appear if Google is connected.");
+      setSuccess("Call booked. Meet link will appear if Google is connected.");
       setScheduleTitle("");
       setScheduleStartHour("");
       setScheduleStartMinute("");
@@ -304,9 +304,9 @@ export default function AdminDashboard() {
       setMentorEmail("");
       setAdditionalEmails([""]);
       setOverlapSlots([]);
-      loadMeetings();
+      loadCalls();
     } catch (err) {
-      setScheduleInlineError(err.message || "Failed to schedule meeting");
+      setScheduleInlineError(err.message || "Failed to book call");
     } finally {
       setLoading(false);
     }
@@ -383,7 +383,7 @@ export default function AdminDashboard() {
       const pastIds = past.map((m) => m.id);
       for (const m of past) {
         try {
-          await meetingsApi.deleteMeeting(m.id);
+          await callsApi.deleteCall(m.id);
         } catch {
           // ignore auto-delete errors
         }
@@ -406,16 +406,16 @@ export default function AdminDashboard() {
   };
   const removeAdditionalEmail = (i) => setAdditionalEmails((p) => p.filter((_, idx) => idx !== i));
 
-  const handleDeleteMeeting = async () => {
+  const handleDeleteCall = async () => {
     if (!meetingToDelete) return;
     setDeletingMeetingId(meetingToDelete);
     setError("");
     try {
-      await meetingsApi.deleteMeeting(meetingToDelete);
+      await callsApi.deleteCall(meetingToDelete);
       setMeetings((prev) => prev.filter((m) => m.id !== meetingToDelete));
       setMeetingToDelete(null);
     } catch (e) {
-      setError(e.message || "Failed to delete meeting");
+      setError(e.message || "Failed to delete call");
       console.error("Delete failed:", e);
     } finally {
       setDeletingMeetingId(null);
@@ -998,7 +998,7 @@ export default function AdminDashboard() {
           style={{ flex: "0 0 30%", width: "30%", maxWidth: "30%" }}
         >
           <div className="rounded-2xl bg-slate-900 border border-slate-800 p-4 flex flex-col">
-            <h2 className="text-lg font-semibold text-white mb-3">Schedule Meeting</h2>
+            <h2 className="text-lg font-semibold text-white mb-3">Book Call</h2>
             <form onSubmit={handleScheduleMeeting} className="space-y-3 flex-1 flex flex-col">
               <div>
                 <label className="block text-sm font-medium text-slate-400 mb-1">Admin email</label>
@@ -1058,7 +1058,7 @@ export default function AdminDashboard() {
                 </button>
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-400 mb-1">Meeting name</label>
+                <label className="block text-sm font-medium text-slate-400 mb-1">Call name</label>
                 <input
                   type="text"
                   value={scheduleTitle}
@@ -1406,7 +1406,7 @@ export default function AdminDashboard() {
               </button>
               <button
                 type="button"
-                onClick={handleDeleteMeeting}
+                onClick={handleDeleteCall}
                 disabled={!!deletingMeetingId}
                 className="rounded-lg border border-red-500 bg-red-600 text-white font-medium px-4 py-2 hover:bg-red-500 transition disabled:opacity-50"
               >
