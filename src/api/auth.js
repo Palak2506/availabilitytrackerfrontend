@@ -1,11 +1,14 @@
 import { api, get, post } from "./client.js";
 
 export async function register(data) {
-  return post("/api/auth/register", data);
+  // Don't redirect on 401 during registration - that's auth failure, not session expiry
+  return api("POST", "/api/auth/register", data, { skipAuthRedirect: true });
 }
 
 export async function login(data) {
-  return post("/api/auth/login", data);
+  // Don't redirect on 401 during login - that's invalid credentials, not session expiry
+  // This prevents infinite redirects when credentials are wrong
+  return api("POST", "/api/auth/login", data, { skipAuthRedirect: true });
 }
 
 export async function me() {

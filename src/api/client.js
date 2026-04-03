@@ -20,8 +20,8 @@ export async function api(method, path, body, options = {}) {
   const url = path.startsWith("http") ? path : `${API_URL}${path}`;
   const headers = {
     "Content-Type": "application/json",
-    "Cache-Control": "no-cache, no-store, must-revalidate",
-    "Pragma": "no-cache",
+    // Removed Cache-Control and Pragma headers - they cause CORS preflight issues
+    // Browsers don't cache POST/DELETE requests anyway
     ...options.headers,
   };
   const token = getToken();
@@ -31,7 +31,7 @@ export async function api(method, path, body, options = {}) {
     method,
     headers,
     credentials: "include",
-    cache: "no-store",
+    // Removed cache: "no-store" - it also triggers CORS preflight
     ...(body != null && { body: JSON.stringify(body) }),
     ...options,
   });
