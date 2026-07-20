@@ -137,6 +137,18 @@ export default function AvailabilityDashboard({
     if (user) fetchWeekly();
   }, [fetchWeekly]);
 
+  const getSlotMeeting = useCallback((dateStr, hour) => {
+    if (!data.meetings || data.meetings.length === 0) return null;
+    const { startTime, endTime } = slotToUTC(dateStr, hour);
+    const slotStart = new Date(startTime).getTime();
+    const slotEnd = new Date(endTime).getTime();
+    return data.meetings.find((meeting) => {
+      const meetStart = new Date(meeting.startTime).getTime();
+      const meetEnd = new Date(meeting.endTime).getTime();
+      return meetStart < slotEnd && meetEnd > slotStart;
+    });
+  }, [data.meetings]);
+
   const isSlotEnabled = (dateStr, hour) => {
     const key = `${dateStr}-${hour}`;
     if (toggles[key] !== undefined) return toggles[key];
@@ -145,7 +157,11 @@ export default function AvailabilityDashboard({
     return slots.some((s) => s.startTime.slice(0, 13) === startTime.slice(0, 13));
   };
 
-  const isSlotDisabled = (dateStr, hour) => isSlotInPast(dateStr, hour, nowMs);
+  const isSlotDisabled = (dateStr, hour) => {
+    if (isSlotInPast(dateStr, hour, nowMs)) return true;
+    if (getSlotMeeting(dateStr, hour)) return true;
+    return false;
+  };
 
   const gridDates = getViewWeekDates(weekOffset);
   const gridStart = gridDates[0];
@@ -219,7 +235,8 @@ export default function AvailabilityDashboard({
     const pattern = [];
     gridDates.forEach((dateStr, dayOfWeek) => {
       HOURS.forEach((hour) => {
-        if (isSlotDisabled(dateStr, hour)) return;
+        const isPast = isSlotInPast(dateStr, hour, nowMs);
+        if (isPast) return;
         if (isSlotEnabled(dateStr, hour)) {
           pattern.push({ dayOfWeek, hour });
         }
@@ -447,8 +464,11 @@ export default function AvailabilityDashboard({
                         </button>
                       </td>
                       {gridDates.map((dateStr) => {
+                        const meeting = getSlotMeeting(dateStr, hour);
+                        const isBooked = !!meeting;
+                        const isPast = isSlotInPast(dateStr, hour, nowMs);
                         const enabled = isSlotEnabled(dateStr, hour);
-                        const disabled = isSlotDisabled(dateStr, hour);
+                        const disabled = isPast || isBooked;
                         return (
                           <td key={dateStr} className="p-0.5 align-middle">
                             <button
@@ -463,27 +483,47 @@ export default function AvailabilityDashboard({
                               }
                               onMouseEnter={readOnly ? undefined : () => continueDrag(dateStr, hour)}
                               disabled={disabled || readOnly}
+                              title={isBooked ? `Booked: ${meeting.title}` : undefined}
                               aria-label={
-                                disabled
-                                  ? "Past slot"
-                                  : enabled
-                                    ? readOnly
-                                      ? "Available"
-                                      : "Available, click to remove"
-                                    : readOnly
-                                      ? "Unavailable"
-                                      : "Unavailable, click to mark available"
+                                isBooked
+                                  ? `Booked: ${meeting.title}`
+                                  : isPast
+                                    ? "Past slot"
+                                    : enabled
+                                      ? readOnly
+                                        ? "Available"
+                                        : "Available, click to remove"
+                                      : readOnly
+                                        ? "Unavailable"
+                                        : "Unavailable, click to mark available"
                               }
                               className={`
                                 mq-slot
                                 ${!disabled && !readOnly ? "cursor-pointer" : ""}
-                                ${disabled ? "mq-slot-past cursor-not-allowed" : ""}
+                                ${isPast ? "mq-slot-past cursor-not-allowed" : ""}
+                                ${isBooked ? "mq-slot-booked cursor-not-allowed" : ""}
                                 ${readOnly && !disabled ? "cursor-default" : ""}
-                                ${!disabled && enabled ? "mq-slot-on" : ""}
-                                ${!disabled && !enabled ? "mq-slot-off" : ""}
+                                ${!isBooked && !isPast && enabled ? "mq-slot-on" : ""}
+                                ${!isBooked && !isPast && !enabled ? "mq-slot-off" : ""}
                               `}
                             >
-                              {!disabled && enabled && (
+                              {isBooked && (
+                                <svg
+                                  className="h-3.5 w-3.5 text-indigo-300"
+                                  fill="none"
+                                  viewBox="0 0 24 24"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  aria-hidden="true"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                                  />
+                                </svg>
+                              )}
+                              {!isBooked && !isPast && enabled && (
                                 <span className="mq-slot-check" aria-hidden>
                                   <svg
                                     className="h-2 w-2 text-white/85"

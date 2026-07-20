@@ -5,7 +5,8 @@ import { useEffect, useMemo, useState } from "react";
  * If URL has token: decode and show who they're logging in as, then redirect to SSO.
  * Reads from window.location.search so token is never lost (e.g. after redirects).
  */
-const PLATFORM_URL = import.meta.env.VITE_PLATFORM_URL || "https://app.mentorquedu.com/signin";
+const PLATFORM_URL =
+  import.meta.env.VITE_PLATFORM_URL || "https://app.mentorquedu.com/signin";
 
 function decodeTokenPayload(token) {
   try {
@@ -24,9 +25,15 @@ export default function Welcome() {
   const urlParams = new URLSearchParams(search);
   const token = urlParams.get("token");
 
-  const decoded = useMemo(() => (token ? decodeTokenPayload(token) : null), [token]);
+  const decoded = useMemo(
+    () => (token ? decodeTokenPayload(token) : null),
+    [token],
+  );
 
-  const displayEmail = decoded?.email || urlParams.get("email") || (decoded?.id ? `${decoded.id}@sso` : "—");
+  const displayEmail =
+    decoded?.email ||
+    urlParams.get("email") ||
+    (decoded?.id ? `${decoded.id}@sso` : "—");
   const displayRole =
     decoded?.role ||
     (decoded?.isAdmin ? "ADMIN" : "MENTOR") ||
@@ -51,11 +58,17 @@ export default function Welcome() {
 
   useEffect(() => {
     if (token) return;
-    const storedToken = sessionStorage.getItem("token") || localStorage.getItem("token");
-    const storedRole = sessionStorage.getItem("userRole") || localStorage.getItem("userRole");
+    const storedToken =
+      sessionStorage.getItem("token") || localStorage.getItem("token");
+    const storedRole =
+      sessionStorage.getItem("userRole") || localStorage.getItem("userRole");
     if (storedToken && storedRole) {
       const path =
-        storedRole === "ADMIN" ? "/admin" : storedRole === "MENTOR" ? "/mentor" : "/availability";
+        storedRole === "ADMIN"
+          ? "/admin"
+          : storedRole === "MENTOR"
+            ? "/mentor"
+            : "/availability";
       window.location.replace(path);
     }
   }, [token]);
@@ -69,7 +82,10 @@ export default function Welcome() {
           aria-modal="true"
           aria-labelledby="welcome-sso-modal-title"
         >
-          <p id="welcome-sso-modal-title" className="text-slate-400 text-lg mb-6">
+          <p
+            id="welcome-sso-modal-title"
+            className="text-slate-400 text-lg mb-6"
+          >
             Logging you in…
           </p>
           <p className="text-white text-xl sm:text-2xl font-bold mb-3 break-all">
@@ -108,14 +124,19 @@ export default function Welcome() {
       <div className="w-full max-w-md text-center">
         {isExpired && (
           <div className="mb-4 p-4 rounded-xl bg-amber-500/20 border border-amber-500/50 text-amber-200 text-sm">
-            Your session expired. Please open the Availability Tracker again from Mentorque.
+            Your session expired. Please open the Availability Tracker again
+            from Mentorque.
           </div>
         )}
         <div className="bg-navy-900 border border-navy-700 rounded-xl p-8 shadow-xl">
-          <h1 className="text-xl font-semibold text-white mb-2">Availability Tracker</h1>
+          <h1 className="text-xl font-semibold text-white mb-2">
+            Availability Tracker
+          </h1>
           <p className="text-slate-400 mb-6">
-            Sign in on Mentorque, then use <strong className="text-slate-300">Check Availability</strong> or{" "}
-            <strong className="text-slate-300">Add Availability</strong> to open the tracker with your role.
+            Sign in on Mentorque, then use{" "}
+            <strong className="text-slate-300">Check Availability</strong> or{" "}
+            <strong className="text-slate-300">Add Availability</strong> to open
+            the tracker with your role.
           </p>
           <a
             href={PLATFORM_URL}

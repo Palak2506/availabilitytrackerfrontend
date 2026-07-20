@@ -30,14 +30,14 @@ export default function Login() {
       <div className="w-full max-w-md">
         <div className="bg-navy-900 border border-navy-700 rounded-xl p-8 shadow-xl">
           <div className="flex flex-col items-center mb-6">
-            <MentorqueBrand size="lg" className="mb-3" textClassName="font-bold text-white tracking-tight" />
-            <h1 className="text-2xl font-semibold text-white mb-1">
-    Sign in
-  </h1>
-  <p className="text-slate-400 text-sm">
-    Mentorque Availability
-  </p>
-</div>
+            <MentorqueBrand
+              size="lg"
+              className="mb-3"
+              textClassName="font-bold text-white tracking-tight"
+            />
+            <h1 className="text-2xl font-semibold text-white mb-1">Sign in</h1>
+            <p className="text-slate-400 text-sm">Mentorque Availability</p>
+          </div>
           <form onSubmit={handleSubmit} className="space-y-4">
             {error && (
               <div className="text-red-400 text-sm bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">
@@ -45,7 +45,9 @@ export default function Login() {
               </div>
             )}
             <div>
-              <label className="block text-sm font-medium text-slate-300 mb-1">Email</label>
+              <label className="block text-sm font-medium text-slate-300 mb-1">
+                Email
+              </label>
               <input
                 type="email"
                 value={email}
@@ -56,7 +58,9 @@ export default function Login() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-300 mb-1">Password</label>
+              <label className="block text-sm font-medium text-slate-300 mb-1">
+                Password
+              </label>
               <input
                 type="password"
                 value={password}
