@@ -95,6 +95,8 @@ export default function AdminDashboard() {
   const meetingsRef = useRef([]);
   const [selectedCommonSlot, setSelectedCommonSlot] = useState(null);
   const prevDisplayTimezoneRef = useRef(displayTimezone);
+  const [userSearchQuery, setUserSearchQuery] = useState("");
+  const [showUserDropdown, setShowUserDropdown] = useState(false);
 
   const [activeTab, setActiveTab] = useState("availability");
   const [editingUserId, setEditingUserId] = useState(null);
@@ -162,8 +164,12 @@ export default function AdminDashboard() {
     }
     setLoadingRecs(true);
     try {
-      const data = await adminApi.getRecommendations(userId);
-      setRecommendations(data);
+      const data = await adminApi.getAiRecommendations(userId);
+      const mapped = (data.recommendations || []).map((r) => ({
+        ...r,
+        explanation: r.reason || "Matched by AI recommendation engine.",
+      }));
+      setRecommendations(mapped);
     } catch (e) {
       setError(e.message || "Failed to load recommendations");
     } finally {
@@ -1007,7 +1013,7 @@ export default function AdminDashboard() {
         >
           Mentors
         </button>
-        <button
+        {/* <button
           onClick={() => setActiveTab("recommendations")}
           className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
             activeTab === "recommendations"
@@ -1016,7 +1022,7 @@ export default function AdminDashboard() {
           }`}
         >
           Recommendations
-        </button>
+        </button> */}
       </div>
 
       {activeTab === "availability" && (
@@ -1049,43 +1055,108 @@ export default function AdminDashboard() {
                     User
                   </label>
                   <div className="flex gap-2">
-                    <div className="relative flex-1 min-w-[260px] group">
-                      <select
-                        value={selectedUser ? selectedUser.id : ""}
-                        onChange={(e) => {
-                          const id = e.target.value;
-                          if (!id) {
-                            setSelectedUser(null);
-                            setUserEmail("");
-                            return;
-                          }
-                          setSelectedUser(
-                            users.find((u) => u.id === id) || null,
-                          );
-                        }}
-                        className="w-full min-w-[260px] h-11 appearance-none rounded-xl bg-slate-900 border border-slate-800 text-white font-medium px-4 pr-10 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 transition shadow-sm"
-                      >
-                        <option value="">Select user</option>
-                        {users.map((u) => (
-                          <option key={u.id} value={u.id}>
-                            {u.name} ({u.email})
-                          </option>
-                        ))}
-                      </select>
-                      <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
-                        <svg
-                          className="w-4 h-4 text-slate-400 transition-transform group-focus-within:rotate-180"
-                          xmlns="http://www.w3.org/2000/svg"
-                          viewBox="0 0 20 20"
-                          fill="currentColor"
-                        >
-                          <path
-                            fillRule="evenodd"
-                            d="M5.23 7.21a.75.75 0 011.06.02L10 11.17l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
-                            clipRule="evenodd"
+                    <div className="relative flex-1 min-w-[260px]">
+                      {selectedUser ? (
+                        <div className="flex items-center justify-between w-full h-11 rounded-xl bg-slate-900 border border-slate-800 text-white font-medium px-4 transition shadow-sm">
+                          <span className="truncate">
+                            {selectedUser.name} ({selectedUser.email})
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedUser(null);
+                              setUserEmail("");
+                              setUserSearchQuery("");
+                            }}
+                            className="text-slate-400 hover:text-white transition p-1"
+                          >
+                            <svg
+                              className="w-4 h-4"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                              stroke="currentColor"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M6 18L18 6M6 6l12 12"
+                              />
+                            </svg>
+                          </button>
+                        </div>
+                      ) : (
+                        <>
+                          <input
+                            type="text"
+                            value={userSearchQuery}
+                            onFocus={() => setShowUserDropdown(true)}
+                            onBlur={() =>
+                              setTimeout(() => setShowUserDropdown(false), 200)
+                            }
+                            onChange={(e) => {
+                              setUserSearchQuery(e.target.value);
+                              setShowUserDropdown(true);
+                            }}
+                            placeholder="Search user by name or email..."
+                            className="w-full h-11 rounded-xl bg-slate-900 border border-slate-800 text-white font-medium px-4 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 transition shadow-sm text-sm"
                           />
-                        </svg>
-                      </div>
+                          {showUserDropdown && (
+                            <div className="absolute left-0 right-0 mt-1 bg-slate-950 border border-slate-800 rounded-xl shadow-xl z-50 max-h-60 overflow-y-auto">
+                              {users.filter(
+                                (u) =>
+                                  u.name
+                                    .toLowerCase()
+                                    .includes(userSearchQuery.toLowerCase()) ||
+                                  u.email
+                                    .toLowerCase()
+                                    .includes(userSearchQuery.toLowerCase()),
+                              ).length === 0 ? (
+                                <div className="text-xs text-slate-500 italic p-3 text-center">
+                                  No users match your search
+                                </div>
+                              ) : (
+                                users
+                                  .filter(
+                                    (u) =>
+                                      u.name
+                                        .toLowerCase()
+                                        .includes(
+                                          userSearchQuery.toLowerCase(),
+                                        ) ||
+                                      u.email
+                                        .toLowerCase()
+                                        .includes(
+                                          userSearchQuery.toLowerCase(),
+                                        ),
+                                  )
+                                  .map((u) => (
+                                    <button
+                                      key={u.id}
+                                      type="button"
+                                      onClick={() => {
+                                        setSelectedUser(u);
+                                        setUserEmail(u.email);
+                                        setUserSearchQuery(
+                                          `${u.name} (${u.email})`,
+                                        );
+                                        setShowUserDropdown(false);
+                                      }}
+                                      className="w-full text-left px-4 py-2 text-xs text-slate-300 hover:bg-slate-900 hover:text-white transition"
+                                    >
+                                      <span className="font-semibold block">
+                                        {u.name}
+                                      </span>
+                                      <span className="text-slate-500 block mt-0.5">
+                                        {u.email}
+                                      </span>
+                                    </button>
+                                  ))
+                              )}
+                            </div>
+                          )}
+                        </>
+                      )}
                     </div>
                     <button
                       type="button"
@@ -1217,104 +1288,137 @@ export default function AdminDashboard() {
                     </div>
 
                     {/* Mentor Ranking List */}
-                    <div className="space-y-3">
+                    <div className="space-y-4">
                       <div className="flex items-center justify-between">
                         <h3 className="text-sm font-semibold text-white">
                           Recommended Mentors (Ranking)
                         </h3>
-                        {loadingRecs && (
-                          <span className="text-xs text-slate-400 animate-pulse">
-                            Fetching recommendations...
-                          </span>
-                        )}
                       </div>
 
-                      {recommendations.length === 0 && !loadingRecs ? (
-                        <div className="text-xs text-slate-500 italic p-3 rounded-lg border border-dashed border-white/[0.08] text-center">
+                      {loadingRecs ? (
+                        <div className="flex flex-col items-center justify-center py-10 space-y-3 bg-white/[0.01] border border-white/[0.04] rounded-2xl">
+                          <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                          <p className="text-xs text-slate-400 animate-pulse">
+                            Finding best mentors...
+                          </p>
+                        </div>
+                      ) : recommendations.length === 0 ? (
+                        <div className="text-xs text-slate-500 italic p-6 rounded-2xl border border-dashed border-white/[0.08] text-center">
                           No recommendations found.
                         </div>
                       ) : (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                           {recommendations.map((rec) => {
                             const isSelected =
                               selectedMentor?.id === rec.mentor.id;
                             const hasOverlapSlot = hasOverlap(rec.mentor.id);
 
                             return (
-                              <button
+                              <div
                                 key={rec.mentor.id}
-                                type="button"
-                                disabled={!hasOverlapSlot && !isSelected}
-                                onClick={() => {
-                                  setSelectedMentor(rec.mentor);
-                                  setMentorEmail(rec.mentor.email);
-                                }}
-                                className={`w-full text-left p-3.5 rounded-xl border transition-all flex flex-col justify-between ${
+                                className={`p-5 rounded-2xl border transition-all flex flex-col justify-between ${
                                   isSelected
                                     ? "bg-blue-600/10 border-blue-500 shadow-[0_0_12px_rgba(59,130,246,0.15)]"
                                     : !hasOverlapSlot
-                                      ? "bg-slate-950/20 border-slate-900 opacity-40 cursor-not-allowed"
-                                      : "bg-white/[0.02] border-white/[0.08] hover:bg-white/[0.05] hover:border-white/[0.15]"
+                                      ? "bg-slate-950/20 border-slate-900/60 opacity-50"
+                                      : "bg-slate-900/60 border-slate-800/80 hover:border-slate-700/60 hover:bg-slate-800/20"
                                 }`}
                               >
-                                <div className="space-y-1.5 w-full">
-                                  <div className="flex items-center justify-between gap-2">
-                                    <span className="font-semibold text-xs text-white truncate">
-                                      {rec.mentor.name}
-                                    </span>
+                                <div className="space-y-4 w-full">
+                                  {/* Mentor Name & Match Score */}
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="min-w-0 flex-1">
+                                      <h4 className="font-semibold text-sm text-white truncate">
+                                        {rec.mentor.name}
+                                      </h4>
+                                      <span className="text-[11px] text-slate-500 block truncate">
+                                        {rec.mentor.email}
+                                      </span>
+                                    </div>
                                     <span
-                                      className={`shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-md ${
+                                      className={`shrink-0 px-2.5 py-0.5 rounded-full text-xs font-bold border ${
                                         isSelected
-                                          ? "bg-blue-500 text-white"
-                                          : "bg-white/[0.06] text-slate-300"
+                                          ? "text-blue-400 bg-blue-500/10 border-blue-500/20"
+                                          : "text-emerald-400 bg-emerald-500/10 border-emerald-500/20"
                                       }`}
                                     >
                                       {rec.score}% Match
                                     </span>
                                   </div>
 
+                                  {/* Description */}
                                   {rec.mentor.description && (
-                                    <p className="text-[11px] text-slate-400 line-clamp-2 italic">
-                                      {rec.mentor.description}
-                                    </p>
+                                    <div>
+                                      <span className="block text-[9px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
+                                        Description
+                                      </span>
+                                      <p className="text-xs text-slate-300 bg-slate-950/30 p-2.5 rounded-lg border border-white/[0.02] italic leading-normal">
+                                        {rec.mentor.description}
+                                      </p>
+                                    </div>
                                   )}
 
+                                  {/* AI Match Reason */}
+                                  {rec.explanation && (
+                                    <div>
+                                      <span className="block text-[9px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
+                                        AI Match Reason
+                                      </span>
+                                      <p className="text-xs text-slate-300 bg-blue-500/5 p-2.5 rounded-lg border border-blue-500/10 leading-relaxed">
+                                        {rec.explanation}
+                                      </p>
+                                    </div>
+                                  )}
+
+                                  {/* Tags */}
                                   {rec.mentor.tags &&
                                     rec.mentor.tags.length > 0 && (
-                                      <div className="flex flex-wrap gap-1 pt-1">
-                                        {rec.mentor.tags
-                                          .slice(0, 3)
-                                          .map((t) => (
+                                      <div>
+                                        <span className="block text-[9px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
+                                          Tags
+                                        </span>
+                                        <div className="flex flex-wrap gap-1">
+                                          {rec.mentor.tags.map((t) => (
                                             <span
                                               key={t}
-                                              className="rounded-full bg-white/[0.04] px-2 py-0.5 text-[9px] text-slate-300 border border-white/[0.06]"
+                                              className="rounded-full bg-white/[0.04] px-2 py-0.5 text-[10px] text-slate-300 border border-white/[0.06]"
                                             >
                                               {t}
                                             </span>
                                           ))}
-                                        {rec.mentor.tags.length > 3 && (
-                                          <span className="text-[9px] text-slate-500 self-center">
-                                            +{rec.mentor.tags.length - 3}
-                                          </span>
-                                        )}
+                                        </div>
                                       </div>
                                     )}
-
-                                  <div className="text-[10px] text-slate-500 leading-normal pt-1.5 border-t border-white/[0.04] w-full">
-                                    <span className="font-medium text-slate-400">
-                                      Reason:
-                                    </span>{" "}
-                                    {rec.explanation.split(". ")[1] ||
-                                      rec.explanation}
-                                  </div>
                                 </div>
 
-                                {!hasOverlapSlot && (
-                                  <div className="mt-2 text-[9px] font-semibold text-red-400/80 bg-red-950/20 border border-red-900/30 rounded px-1.5 py-0.5 self-start">
-                                    No overlap found
-                                  </div>
-                                )}
-                              </button>
+                                {/* Select Action */}
+                                <div className="mt-4 pt-3 border-t border-white/[0.06] flex items-center justify-between gap-2">
+                                  {!hasOverlapSlot ? (
+                                    <span className="text-[10px] text-red-400 font-semibold bg-red-950/20 border border-red-900/30 px-2 py-0.5 rounded shrink-0">
+                                      No overlap found
+                                    </span>
+                                  ) : (
+                                    <div />
+                                  )}
+                                  <button
+                                    type="button"
+                                    disabled={!hasOverlapSlot && !isSelected}
+                                    onClick={() => {
+                                      setSelectedMentor(rec.mentor);
+                                      setMentorEmail(rec.mentor.email);
+                                    }}
+                                    className={`rounded-lg px-4 py-1.5 text-xs font-semibold transition-all shrink-0 ${
+                                      isSelected
+                                        ? "bg-blue-600 hover:bg-blue-500 text-white shadow-md shadow-blue-500/10"
+                                        : !hasOverlapSlot
+                                          ? "bg-slate-800 text-slate-500 cursor-not-allowed"
+                                          : "bg-slate-800 hover:bg-slate-700 text-slate-200"
+                                    }`}
+                                  >
+                                    {isSelected ? "Selected" : "Select"}
+                                  </button>
+                                </div>
+                              </div>
                             );
                           })}
                         </div>
@@ -1793,8 +1897,13 @@ export default function AdminDashboard() {
                   )}
                   <button
                     type="submit"
-                    disabled={loading}
-                    className="w-full rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium px-6 py-2.5 transition disabled:opacity-50"
+                    disabled={
+                      loading ||
+                      !selectedUser ||
+                      !selectedMentor ||
+                      totalCommonSlotsAcrossWeek === 0
+                    }
+                    className="w-full rounded-lg bg-blue-600 hover:bg-blue-500 disabled:bg-slate-800 disabled:text-slate-500 disabled:hover:bg-slate-800 disabled:cursor-not-allowed text-white font-medium px-6 py-2.5 transition disabled:opacity-50"
                   >
                     {loading ? "Saving..." : "Schedule Meeting"}
                   </button>

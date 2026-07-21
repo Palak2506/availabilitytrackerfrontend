@@ -37,3 +37,7 @@ export async function updateAdminMentor(id, data) {
 export async function getRecommendations(userId) {
   return get(`/api/admin/recommendations?userId=${userId}`);
 }
+
+export async function getAiRecommendations(userId) {
+  return post("/api/admin/recommend", { userId });
+}
