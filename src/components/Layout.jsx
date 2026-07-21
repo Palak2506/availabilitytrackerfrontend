@@ -294,6 +294,11 @@ export default function Layout() {
                     <IconCalendar className="h-4 w-4 shrink-0" />
                     <span>{scheduleLabel}</span>
                   </NavLink>
+                  {(user?.role === "USER" || user?.role === "MENTOR") && (
+                    <NavLink to="/profile" className={navLinkClass}>
+                      <span>Profile</span>
+                    </NavLink>
+                  )}
                   {user?.role === "ADMIN" && (
                     <>
                       <NavLink to="/admin/schedules" className={navLinkClass}>

@@ -18,8 +18,23 @@ const TIMEZONE_OPTIONS = [
   { value: "IST", label: "IST (GMT+5:30)" },
 ];
 
-const SCHEDULE_HOUR_OPTIONS = Array.from({ length: 12 }, (_, i) => String(i + 1));
-const SCHEDULE_MINUTE_OPTIONS = ["00", "05", "10", "15", "20", "25", "30", "35", "40", "45", "50", "55"];
+const SCHEDULE_HOUR_OPTIONS = Array.from({ length: 12 }, (_, i) =>
+  String(i + 1),
+);
+const SCHEDULE_MINUTE_OPTIONS = [
+  "00",
+  "05",
+  "10",
+  "15",
+  "20",
+  "25",
+  "30",
+  "35",
+  "40",
+  "45",
+  "50",
+  "55",
+];
 const SCHEDULE_AMPM_OPTIONS = ["AM", "PM"];
 
 const scheduleTimeSelectClass =
@@ -35,12 +50,23 @@ export default function AdminDashboard() {
   const [displayTimezone, setDisplayTimezone] = useState("UTC");
   const [weekStart, setWeekStart] = useState(() => {
     const today = new Date();
-    const base = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+    const base = new Date(
+      Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()),
+    );
     return base.toISOString().slice(0, 10);
   });
-  const emptyAvailability = useMemo(() => ({ dates: [], availability: {} }), []);
-  const [userAvailability, setUserAvailability] = useState(() => ({ dates: [], availability: {} }));
-  const [mentorAvailability, setMentorAvailability] = useState(() => ({ dates: [], availability: {} }));
+  const emptyAvailability = useMemo(
+    () => ({ dates: [], availability: {} }),
+    [],
+  );
+  const [userAvailability, setUserAvailability] = useState(() => ({
+    dates: [],
+    availability: {},
+  }));
+  const [mentorAvailability, setMentorAvailability] = useState(() => ({
+    dates: [],
+    availability: {},
+  }));
   const [loadingUserAvail, setLoadingUserAvail] = useState(false);
   const [loadingMentorAvail, setLoadingMentorAvail] = useState(false);
   const [meetings, setMeetings] = useState([]);
@@ -70,9 +96,193 @@ export default function AdminDashboard() {
   const [selectedCommonSlot, setSelectedCommonSlot] = useState(null);
   const prevDisplayTimezoneRef = useRef(displayTimezone);
 
+  const [activeTab, setActiveTab] = useState("availability");
+  const [editingUserId, setEditingUserId] = useState(null);
+  const [editDesc, setEditDesc] = useState("");
+  const [editTags, setEditTags] = useState([]);
+  const [editTagInput, setEditTagInput] = useState("");
+  const [recUserId, setRecUserId] = useState("");
+  const [recommendations, setRecommendations] = useState([]);
+  const [loadingRecs, setLoadingRecs] = useState(false);
+
+  const parseHmToMinutes = (hm) => {
+    if (!hm) return null;
+    const [hStr, mStr] = hm.split(":");
+    const h = Number(hStr);
+    const m = Number(mStr);
+    if (Number.isNaN(h) || Number.isNaN(m)) return null;
+    return h * 60 + m;
+  };
+
+  const computeCommonSlotsForDay = (userSlots = [], mentorSlots = []) => {
+    const results = [];
+    for (const u of userSlots) {
+      const uStart = parseHmToMinutes(u.convertedStart);
+      const uEndRaw = parseHmToMinutes(u.convertedEnd);
+      if (uStart == null || uEndRaw == null) continue;
+      let uEnd = uEndRaw;
+      if (uEnd <= uStart) uEnd += 1440; // handle local cross-midnight
+
+      for (const m of mentorSlots) {
+        const mStart = parseHmToMinutes(m.convertedStart);
+        const mEndRaw = parseHmToMinutes(m.convertedEnd);
+        if (mStart == null || mEndRaw == null) continue;
+        let mEnd = mEndRaw;
+        if (mEnd <= mStart) mEnd += 1440;
+
+        let start = Math.max(uStart, mStart, 0);
+        let end = Math.min(uEnd, mEnd, 1440);
+
+        if (end <= start) continue; // no overlap or just touching
+
+        const startHm = minutesToHm(start);
+        const endHm = minutesToHm(end);
+        results.push({ startHm, endHm });
+      }
+    }
+    return results;
+  };
+
+  const minutesToHm = (minutes) => {
+    let total = minutes;
+    if (total < 0) total = 0;
+    if (total > 1440) total = 1440;
+    if (total === 1440) total = 0; // treat midnight as 00:00 of next day
+    const h = Math.floor(total / 60);
+    const m = total % 60;
+    const hh = h.toString().padStart(2, "0");
+    const mm = m.toString().padStart(2, "0");
+    return `${hh}:${mm}`;
+  };
+
+  const loadRecommendations = useCallback(async (userId) => {
+    if (!userId) {
+      setRecommendations([]);
+      return;
+    }
+    setLoadingRecs(true);
+    try {
+      const data = await adminApi.getRecommendations(userId);
+      setRecommendations(data);
+    } catch (e) {
+      setError(e.message || "Failed to load recommendations");
+    } finally {
+      setLoadingRecs(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === "recommendations" && recUserId) {
+      loadRecommendations(recUserId);
+    }
+  }, [recUserId, activeTab, loadRecommendations]);
+
+  useEffect(() => {
+    if (selectedUser) {
+      setSelectedMentor(null);
+      setMentorEmail("");
+      loadRecommendations(selectedUser.id);
+    } else {
+      setSelectedMentor(null);
+      setMentorEmail("");
+      setRecommendations([]);
+    }
+  }, [selectedUser, loadRecommendations]);
+
+  const [mentorAvailabilitiesMap, setMentorAvailabilitiesMap] = useState({});
+
+  useEffect(() => {
+    const loadAllMentorAvailabilities = async () => {
+      if (recommendations.length === 0) {
+        setMentorAvailabilitiesMap({});
+        return;
+      }
+      const map = {};
+      await Promise.all(
+        recommendations.map(async (rec) => {
+          try {
+            const data = await availabilityApi.getWeekly({
+              mentorId: rec.mentor.id,
+              weekStart,
+            });
+            map[rec.mentor.id] = data;
+          } catch (err) {
+            console.error(err);
+          }
+        }),
+      );
+      setMentorAvailabilitiesMap(map);
+    };
+
+    loadAllMentorAvailabilities();
+  }, [recommendations, weekStart]);
+
+  const handleSaveUserMetadata = async (userId) => {
+    try {
+      setError("");
+      const updated = await adminApi.updateAdminUser(userId, {
+        description: editDesc,
+        tags: editTags,
+      });
+      setUsers(
+        users.map((u) =>
+          u.id === userId
+            ? { ...u, description: updated.description, tags: updated.tags }
+            : u,
+        ),
+      );
+      setEditingUserId(null);
+    } catch (e) {
+      setError(e.message || "Failed to update user metadata");
+    }
+  };
+
+  const handleSaveMentorMetadata = async (mentorId) => {
+    try {
+      setError("");
+      const updated = await adminApi.updateAdminMentor(mentorId, {
+        description: editDesc,
+        tags: editTags,
+      });
+      setMentors(
+        mentors.map((m) =>
+          m.id === mentorId
+            ? { ...m, description: updated.description, tags: updated.tags }
+            : m,
+        ),
+      );
+      setEditingUserId(null);
+    } catch (e) {
+      setError(e.message || "Failed to update mentor metadata");
+    }
+  };
+
+  const startEditing = (member) => {
+    setEditingUserId(member.id);
+    setEditDesc(member.description || "");
+    setEditTags(member.tags || []);
+    setEditTagInput("");
+  };
+
+  const handleAddEditTag = (e) => {
+    e.preventDefault();
+    const val = editTagInput.trim();
+    if (val && !editTags.includes(val)) {
+      setEditTags([...editTags, val]);
+      setEditTagInput("");
+    }
+  };
+
+  const handleRemoveEditTag = (tagToRemove) => {
+    setEditTags(editTags.filter((t) => t !== tagToRemove));
+  };
+
   const loadUsers = useCallback(async () => {
     try {
-      const [u, m] = await Promise.all([adminApi.listUsers(), adminApi.listMentors()]);
+      const [u, m] = await Promise.all([
+        adminApi.listUsers(),
+        adminApi.listMentors(),
+      ]);
       setUsers(u);
       setMentors(m);
     } catch (e) {
@@ -90,7 +300,10 @@ export default function AdminDashboard() {
     setLoadingUserAvail(true);
     setError("");
     try {
-      const data = await availabilityApi.getWeekly({ userId: selectedUser.id, weekStart });
+      const data = await availabilityApi.getWeekly({
+        userId: selectedUser.id,
+        weekStart,
+      });
       setUserAvailability(data);
     } catch (e) {
       setError(e.message || "Failed to load user availability");
@@ -108,7 +321,10 @@ export default function AdminDashboard() {
     setLoadingMentorAvail(true);
     setError("");
     try {
-      const data = await availabilityApi.getWeekly({ mentorId: selectedMentor.id, weekStart });
+      const data = await availabilityApi.getWeekly({
+        mentorId: selectedMentor.id,
+        weekStart,
+      });
       setMentorAvailability(data);
     } catch (e) {
       setError(e.message || "Failed to load mentor availability");
@@ -185,7 +401,8 @@ export default function AdminDashboard() {
   }, []);
 
   const hm24To12Parts = useCallback((hm24) => {
-    if (!hm24 || !/^\d{1,2}:\d{2}$/.test(hm24)) return { hour: "", minute: "", amPm: "" };
+    if (!hm24 || !/^\d{1,2}:\d{2}$/.test(hm24))
+      return { hour: "", minute: "", amPm: "" };
     const [hs, ms] = hm24.split(":");
     let h = parseInt(hs, 10);
     const minute = ms.padStart(2, "0");
@@ -202,21 +419,48 @@ export default function AdminDashboard() {
     return { hour: String(h), minute, amPm };
   }, []);
 
-  const meetingZone = displayTimezone === "IST" ? "Asia/Kolkata" : "Europe/Dublin";
+  const meetingZone =
+    displayTimezone === "IST" ? "Asia/Kolkata" : "Europe/Dublin";
 
   const scheduleStartDt = useMemo(() => {
-    const hm = to24From12(scheduleStartHour, scheduleStartMinute, scheduleStartAmPm);
+    const hm = to24From12(
+      scheduleStartHour,
+      scheduleStartMinute,
+      scheduleStartAmPm,
+    );
     if (!scheduleDate || !hm) return null;
-    const dt = DateTime.fromFormat(`${scheduleDate} ${hm}`, "yyyy-MM-dd HH:mm", { zone: meetingZone });
+    const dt = DateTime.fromFormat(
+      `${scheduleDate} ${hm}`,
+      "yyyy-MM-dd HH:mm",
+      { zone: meetingZone },
+    );
     return dt.isValid ? dt : null;
-  }, [scheduleDate, scheduleStartHour, scheduleStartMinute, scheduleStartAmPm, meetingZone, to24From12]);
+  }, [
+    scheduleDate,
+    scheduleStartHour,
+    scheduleStartMinute,
+    scheduleStartAmPm,
+    meetingZone,
+    to24From12,
+  ]);
 
   const scheduleEndDt = useMemo(() => {
     const hm = to24From12(scheduleEndHour, scheduleEndMinute, scheduleEndAmPm);
     if (!scheduleDate || !hm) return null;
-    const dt = DateTime.fromFormat(`${scheduleDate} ${hm}`, "yyyy-MM-dd HH:mm", { zone: meetingZone });
+    const dt = DateTime.fromFormat(
+      `${scheduleDate} ${hm}`,
+      "yyyy-MM-dd HH:mm",
+      { zone: meetingZone },
+    );
     return dt.isValid ? dt : null;
-  }, [scheduleDate, scheduleEndHour, scheduleEndMinute, scheduleEndAmPm, meetingZone, to24From12]);
+  }, [
+    scheduleDate,
+    scheduleEndHour,
+    scheduleEndMinute,
+    scheduleEndAmPm,
+    meetingZone,
+    to24From12,
+  ]);
 
   const scheduleStartIso = scheduleStartDt?.toISO() ?? "";
   const scheduleEndIso = scheduleEndDt?.toISO() ?? "";
@@ -227,7 +471,7 @@ export default function AdminDashboard() {
       const slots = await adminApi.getOverlappingSlots(
         availabilityTarget.id,
         scheduleStartIso,
-        scheduleEndIso
+        scheduleEndIso,
       );
       setOverlapSlots(slots);
     } catch {
@@ -236,12 +480,17 @@ export default function AdminDashboard() {
   }, [availabilityTarget, scheduleStartIso, scheduleEndIso]);
 
   useEffect(() => {
-    if (scheduleStartIso && scheduleEndIso && availabilityTarget?.id) checkOverlap();
+    if (scheduleStartIso && scheduleEndIso && availabilityTarget?.id)
+      checkOverlap();
     else setOverlapSlots([]);
   }, [scheduleStartIso, scheduleEndIso, availabilityTarget?.id, checkOverlap]);
 
   const getParticipantEmails = () => {
-    const list = [userEmail.trim(), mentorEmail.trim(), ...additionalEmails.map((e) => e.trim())].filter(Boolean);
+    const list = [
+      userEmail.trim(),
+      mentorEmail.trim(),
+      ...additionalEmails.map((e) => e.trim()),
+    ].filter(Boolean);
     return list;
   };
 
@@ -282,7 +531,8 @@ export default function AdminDashboard() {
       const date = scheduleStartDt.toFormat("dd-MM-yyyy");
       const startTime = scheduleStartDt.toFormat("HH:mm");
       const endTime = scheduleEndDt.toFormat("HH:mm");
-      const timezone = displayTimezone === "IST" ? "Asia/Kolkata" : "Europe/Dublin";
+      const timezone =
+        displayTimezone === "IST" ? "Asia/Kolkata" : "Europe/Dublin";
       await adminApi.scheduleMeeting({
         title: scheduleTitle.trim(),
         date,
@@ -291,7 +541,9 @@ export default function AdminDashboard() {
         timezone,
         participantEmails: getParticipantEmails(),
       });
-      setSuccess("Meeting scheduled. Meet link will appear if Google is connected.");
+      setSuccess(
+        "Meeting scheduled. Meet link will appear if Google is connected.",
+      );
       setScheduleTitle("");
       setScheduleStartHour("");
       setScheduleStartMinute("");
@@ -305,6 +557,8 @@ export default function AdminDashboard() {
       setAdditionalEmails([""]);
       setOverlapSlots([]);
       loadMeetings();
+      loadUserAvailability();
+      loadMentorAvailability();
     } catch (err) {
       setScheduleInlineError(err.message || "Failed to schedule meeting");
     } finally {
@@ -323,12 +577,17 @@ export default function AdminDashboard() {
     if (prevTz === displayTimezone) return;
 
     const prevZone = prevTz === "IST" ? "Asia/Kolkata" : "Europe/Dublin";
-    const newZone = displayTimezone === "IST" ? "Asia/Kolkata" : "Europe/Dublin";
+    const newZone =
+      displayTimezone === "IST" ? "Asia/Kolkata" : "Europe/Dublin";
 
     const convertParts = (hour, minute, amPm) => {
       const hm = to24From12(hour, minute, amPm);
       if (!scheduleDate || !hm) return null;
-      const dtPrev = DateTime.fromFormat(`${scheduleDate} ${hm}`, "yyyy-MM-dd HH:mm", { zone: prevZone });
+      const dtPrev = DateTime.fromFormat(
+        `${scheduleDate} ${hm}`,
+        "yyyy-MM-dd HH:mm",
+        { zone: prevZone },
+      );
       if (!dtPrev.isValid) return null;
       const dtNew = dtPrev.setZone(newZone);
       return {
@@ -337,8 +596,16 @@ export default function AdminDashboard() {
       };
     };
 
-    const sConv = convertParts(scheduleStartHour, scheduleStartMinute, scheduleStartAmPm);
-    const eConv = convertParts(scheduleEndHour, scheduleEndMinute, scheduleEndAmPm);
+    const sConv = convertParts(
+      scheduleStartHour,
+      scheduleStartMinute,
+      scheduleStartAmPm,
+    );
+    const eConv = convertParts(
+      scheduleEndHour,
+      scheduleEndMinute,
+      scheduleEndAmPm,
+    );
 
     if (!sConv && !eConv) {
       prevDisplayTimezoneRef.current = displayTimezone;
@@ -378,7 +645,9 @@ export default function AdminDashboard() {
       const current = meetingsRef.current;
       if (!Array.isArray(current) || current.length === 0) return;
       const now = new Date();
-      const past = current.filter((m) => m.endTime && new Date(m.endTime) <= now);
+      const past = current.filter(
+        (m) => m.endTime && new Date(m.endTime) <= now,
+      );
       if (past.length === 0) return;
       const pastIds = past.map((m) => m.id);
       for (const m of past) {
@@ -404,7 +673,8 @@ export default function AdminDashboard() {
       return n;
     });
   };
-  const removeAdditionalEmail = (i) => setAdditionalEmails((p) => p.filter((_, idx) => idx !== i));
+  const removeAdditionalEmail = (i) =>
+    setAdditionalEmails((p) => p.filter((_, idx) => idx !== i));
 
   const handleDeleteMeeting = async () => {
     if (!meetingToDelete) return;
@@ -422,13 +692,14 @@ export default function AdminDashboard() {
     }
   };
 
-  const selectedTimezone = displayTimezone === "IST" ? "Asia/Kolkata" : "Europe/Dublin";
+  const selectedTimezone =
+    displayTimezone === "IST" ? "Asia/Kolkata" : "Europe/Dublin";
 
   /** Display week: 7 days starting at weekStart (UTC), matching API grid. */
   const displayWeekInfo = useMemo(() => {
     const weekStartDt = DateTime.fromISO(weekStart + "T00:00:00Z");
     const dayKeys = [0, 1, 2, 3, 4, 5, 6].map((i) =>
-      weekStartDt.plus({ days: i }).toFormat("yyyy-MM-dd")
+      weekStartDt.plus({ days: i }).toFormat("yyyy-MM-dd"),
     );
     return {
       weekStartDt,
@@ -439,12 +710,16 @@ export default function AdminDashboard() {
 
   const prevWeek = () => {
     setWeekStart(
-      DateTime.fromISO(weekStart + "T00:00:00Z").minus({ days: 7 }).toFormat("yyyy-MM-dd")
+      DateTime.fromISO(weekStart + "T00:00:00Z")
+        .minus({ days: 7 })
+        .toFormat("yyyy-MM-dd"),
     );
   };
   const nextWeek = () => {
     setWeekStart(
-      DateTime.fromISO(weekStart + "T00:00:00Z").plus({ days: 7 }).toFormat("yyyy-MM-dd")
+      DateTime.fromISO(weekStart + "T00:00:00Z")
+        .plus({ days: 7 })
+        .toFormat("yyyy-MM-dd"),
     );
   };
 
@@ -456,14 +731,20 @@ export default function AdminDashboard() {
 
     for (const [dateKey, slots] of Object.entries(data.availability)) {
       for (const slot of slots || []) {
-        const localStart = DateTime.fromISO(slot.startTime, { zone: "utc" }).setZone(tz);
-        const localEnd = DateTime.fromISO(slot.endTime, { zone: "utc" }).setZone(tz);
+        const localStart = DateTime.fromISO(slot.startTime, {
+          zone: "utc",
+        }).setZone(tz);
+        const localEnd = DateTime.fromISO(slot.endTime, {
+          zone: "utc",
+        }).setZone(tz);
 
         const convertedStart = localStart.toFormat("HH:mm");
         const convertedEnd = localEnd.toFormat("HH:mm");
 
         if (!byDate[dateKey]) {
-          const label = DateTime.fromISO(dateKey + "T00:00:00", { zone: tz }).toFormat("ccc, dd LLL");
+          const label = DateTime.fromISO(dateKey + "T00:00:00", {
+            zone: tz,
+          }).toFormat("ccc, dd LLL");
           byDate[dateKey] = { dayLabel: label, slots: [] };
         }
 
@@ -480,17 +761,26 @@ export default function AdminDashboard() {
 
   /** Group flat slots (with startTime/endTime) by local date in selected timezone. */
   const groupFlatSlotsByLocalDate = useCallback((slots, tz) => {
-    if (!Array.isArray(slots) || slots.length === 0) return { dates: [], byDate: {} };
+    if (!Array.isArray(slots) || slots.length === 0)
+      return { dates: [], byDate: {} };
     const byDate = {};
     for (const slot of slots) {
-      const localStart = DateTime.fromISO(slot.startTime, { zone: "utc" }).setZone(tz);
-      const localEnd = DateTime.fromISO(slot.endTime, { zone: "utc" }).setZone(tz);
+      const localStart = DateTime.fromISO(slot.startTime, {
+        zone: "utc",
+      }).setZone(tz);
+      const localEnd = DateTime.fromISO(slot.endTime, { zone: "utc" }).setZone(
+        tz,
+      );
       const localDateKey = localStart.toFormat("yyyy-MM-dd");
       const dayLabel = localStart.toFormat("ccc, dd LLL");
       const convertedStart = localStart.toFormat("HH:mm");
       const convertedEnd = localEnd.toFormat("HH:mm");
       if (!byDate[localDateKey]) byDate[localDateKey] = { dayLabel, slots: [] };
-      byDate[localDateKey].slots.push({ ...slot, convertedStart, convertedEnd });
+      byDate[localDateKey].slots.push({
+        ...slot,
+        convertedStart,
+        convertedEnd,
+      });
     }
     return { dates: Object.keys(byDate).sort(), byDate };
   }, []);
@@ -499,7 +789,7 @@ export default function AdminDashboard() {
     !data
       ? []
       : Object.entries(data.availability || {}).flatMap(([dateStr, slots]) =>
-          (slots || []).map((s) => ({ ...s, dateStr }))
+          (slots || []).map((s) => ({ ...s, dateStr })),
         );
 
   const userSlotsFlat = flattenSlots(userAvailability);
@@ -507,12 +797,12 @@ export default function AdminDashboard() {
 
   const userByLocalDate = useMemo(
     () => groupFlatSlotsByLocalDate(userSlotsFlat, selectedTimezone),
-    [userSlotsFlat, selectedTimezone, groupFlatSlotsByLocalDate]
+    [userSlotsFlat, selectedTimezone, groupFlatSlotsByLocalDate],
   );
 
   const mentorByLocalDate = useMemo(
     () => groupFlatSlotsByLocalDate(mentorSlotsFlat, selectedTimezone),
-    [mentorSlotsFlat, selectedTimezone, groupFlatSlotsByLocalDate]
+    [mentorSlotsFlat, selectedTimezone, groupFlatSlotsByLocalDate],
   );
 
   const upcomingDays = useMemo(() => {
@@ -526,69 +816,95 @@ export default function AdminDashboard() {
     });
   }, [selectedTimezone]);
 
+  const totalCommonSlotsAcrossWeek = useMemo(() => {
+    if (!selectedUser || !selectedMentor) return 0;
+    let total = 0;
+    for (const { key } of upcomingDays) {
+      const userSlots = userByLocalDate.byDate[key]?.slots ?? [];
+      const mentorSlots = mentorByLocalDate.byDate[key]?.slots ?? [];
+      const common = computeCommonSlotsForDay(userSlots, mentorSlots);
+      total += common.length;
+    }
+    return total;
+  }, [
+    selectedUser,
+    selectedMentor,
+    userByLocalDate,
+    mentorByLocalDate,
+    upcomingDays,
+    computeCommonSlotsForDay,
+  ]);
+
+  const hasOverlap = useCallback(
+    (mentorId) => {
+      const mAvail = mentorAvailabilitiesMap[mentorId];
+      if (!mAvail) return true; // default to true while loading
+
+      const mentorSlotsFlatLocal = flattenSlots(mAvail);
+      const mentorByLocalDateLocal = groupFlatSlotsByLocalDate(
+        mentorSlotsFlatLocal,
+        selectedTimezone,
+      );
+
+      let totalCommon = 0;
+      for (const { key } of upcomingDays) {
+        const userSlots = userByLocalDate.byDate[key]?.slots ?? [];
+        const mentorSlots = mentorByLocalDateLocal.byDate[key]?.slots ?? [];
+        const common = computeCommonSlotsForDay(userSlots, mentorSlots);
+        totalCommon += common.length;
+      }
+      return totalCommon > 0;
+    },
+    [
+      mentorAvailabilitiesMap,
+      userByLocalDate,
+      selectedTimezone,
+      upcomingDays,
+      computeCommonSlotsForDay,
+      groupFlatSlotsByLocalDate,
+    ],
+  );
+
   const formatSlotsForDay = (slots, emptyLabel = "No availability") => {
     if (!slots || slots.length === 0) return emptyLabel;
     return slots
-      .map((slot) => formatTimeRange(`${slot.convertedStart} – ${slot.convertedEnd}`))
+      .map((slot) =>
+        formatTimeRange(`${slot.convertedStart} – ${slot.convertedEnd}`),
+      )
       .join(", ");
   };
 
-  const parseHmToMinutes = (hm) => {
-    if (!hm) return null;
-    const [hStr, mStr] = hm.split(":");
-    const h = Number(hStr);
-    const m = Number(mStr);
-    if (Number.isNaN(h) || Number.isNaN(m)) return null;
-    return h * 60 + m;
-  };
+  const isSlotCommon = useCallback((slot, dayKey, otherSlots) => {
+    const start = parseHmToMinutes(slot.convertedStart);
+    const endRaw = parseHmToMinutes(slot.convertedEnd);
+    if (start == null || endRaw == null) return false;
+    let end = endRaw;
+    if (end <= start) end += 1440;
 
-  const minutesToHm = (minutes) => {
-    let total = minutes;
-    if (total < 0) total = 0;
-    if (total > 1440) total = 1440;
-    if (total === 1440) total = 0; // treat midnight as 00:00 of next day
-    const h = Math.floor(total / 60);
-    const m = total % 60;
-    const hh = h.toString().padStart(2, "0");
-    const mm = m.toString().padStart(2, "0");
-    return `${hh}:${mm}`;
-  };
+    for (const other of otherSlots) {
+      const oStart = parseHmToMinutes(other.convertedStart);
+      const oEndRaw = parseHmToMinutes(other.convertedEnd);
+      if (oStart == null || oEndRaw == null) continue;
+      let oEnd = oEndRaw;
+      if (oEnd <= oStart) oEnd += 1440;
 
-  const computeCommonSlotsForDay = (userSlots = [], mentorSlots = []) => {
-    const results = [];
-    for (const u of userSlots) {
-      const uStart = parseHmToMinutes(u.convertedStart);
-      const uEndRaw = parseHmToMinutes(u.convertedEnd);
-      if (uStart == null || uEndRaw == null) continue;
-      let uEnd = uEndRaw;
-      if (uEnd <= uStart) uEnd += 1440; // handle local cross-midnight
-
-      for (const m of mentorSlots) {
-        const mStart = parseHmToMinutes(m.convertedStart);
-        const mEndRaw = parseHmToMinutes(m.convertedEnd);
-        if (mStart == null || mEndRaw == null) continue;
-        let mEnd = mEndRaw;
-        if (mEnd <= mStart) mEnd += 1440;
-
-        let start = Math.max(uStart, mStart, 0);
-        let end = Math.min(uEnd, mEnd, 1440);
-
-        if (end <= start) continue; // no overlap or just touching
-
-        const startHm = minutesToHm(start);
-        const endHm = minutesToHm(end);
-        results.push({ startHm, endHm });
+      const overlapStart = Math.max(start, oStart);
+      const overlapEnd = Math.min(end, oEnd);
+      if (overlapEnd > overlapStart) {
+        return true;
       }
     }
-    return results;
-  };
+    return false;
+  }, []);
 
   const meetingsByDate = useMemo(() => {
     if (!Array.isArray(meetings) || meetings.length === 0) return {};
     const byDate = {};
     for (const m of meetings) {
       if (!m.startTime) continue;
-      const start = DateTime.fromISO(m.startTime, { zone: "utc" }).setZone(selectedTimezone);
+      const start = DateTime.fromISO(m.startTime, { zone: "utc" }).setZone(
+        selectedTimezone,
+      );
       const end = m.endTime
         ? DateTime.fromISO(m.endTime, { zone: "utc" }).setZone(selectedTimezone)
         : null;
@@ -602,7 +918,8 @@ export default function AdminDashboard() {
     }
     Object.keys(byDate).forEach((k) => {
       byDate[k].sort(
-        (a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
+        (a, b) =>
+          new Date(a.startTime).getTime() - new Date(b.startTime).getTime(),
       );
     });
     return byDate;
@@ -651,608 +968,1311 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      <div className="flex flex-row items-start gap-4 w-full">
-        {/* LEFT: Availability Viewer */}
-        <div
-          className="min-w-0 overflow-hidden space-y-4"
-          style={{ flex: "0 0 70%", width: "70%", maxWidth: "70%" }}
+      <div>
+        <h1 className="text-2xl font-semibold text-white">Admin Dashboard</h1>
+        <p className="text-slate-400 font-medium mt-1">
+          Manage users, mentors, metadata, scheduling, and recommendations.
+        </p>
+      </div>
+
+      {/* Tab Navigation */}
+      <div className="flex gap-2 border-b border-white/[0.08] pb-px">
+        <button
+          onClick={() => setActiveTab("availability")}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === "availability"
+              ? "border-white text-white"
+              : "border-transparent text-slate-400 hover:text-white"
+          }`}
         >
-          <div>
-            <h1 className="text-2xl font-semibold text-white">Admin Dashboard</h1>
-            <p className="text-slate-400 font-medium mt-1">
-              View user/mentor availability, find overlaps, and schedule meetings.
-            </p>
-          </div>
+          Availability & Scheduling
+        </button>
+        <button
+          onClick={() => setActiveTab("users")}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === "users"
+              ? "border-white text-white"
+              : "border-transparent text-slate-400 hover:text-white"
+          }`}
+        >
+          Users
+        </button>
+        <button
+          onClick={() => setActiveTab("mentors")}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === "mentors"
+              ? "border-white text-white"
+              : "border-transparent text-slate-400 hover:text-white"
+          }`}
+        >
+          Mentors
+        </button>
+        <button
+          onClick={() => setActiveTab("recommendations")}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === "recommendations"
+              ? "border-white text-white"
+              : "border-transparent text-slate-400 hover:text-white"
+          }`}
+        >
+          Recommendations
+        </button>
+      </div>
 
-          <div className="w-full flex flex-wrap md:flex-nowrap items-end gap-4">
-            <div className="w-full md:flex-1">
-              <label className="block text-sm font-medium text-slate-400 mb-1">Timezone</label>
-              <select
-                value={displayTimezone}
-                onChange={(e) => setDisplayTimezone(e.target.value)}
-                className="w-full rounded-lg bg-slate-900 border border-slate-800 text-white font-medium px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                {TIMEZONE_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="w-full md:flex-1 min-w-[220px]">
-              <label className="block text-sm font-medium text-slate-400 mb-1">User</label>
-              <div className="flex gap-2">
-                <div className="relative flex-1 min-w-[260px] group">
+      {activeTab === "availability" && (
+        <>
+          <div className="flex flex-row items-start gap-4 w-full">
+            {/* LEFT: Availability Viewer */}
+            <div
+              className="min-w-0 overflow-hidden space-y-4"
+              style={{ flex: "0 0 70%", width: "70%", maxWidth: "70%" }}
+            >
+              <div className="w-full flex flex-wrap md:flex-nowrap items-end gap-4">
+                <div className="w-full md:flex-1">
+                  <label className="block text-sm font-medium text-slate-400 mb-1">
+                    Timezone
+                  </label>
                   <select
-                    value={selectedUser ? selectedUser.id : ""}
-                    onChange={(e) => {
-                      const id = e.target.value;
-                      if (!id) {
-                        setSelectedUser(null);
-                        setUserEmail("");
-                        return;
-                      }
-                      setSelectedUser(users.find((u) => u.id === id) || null);
-                    }}
-                    className="w-full min-w-[260px] h-11 appearance-none rounded-xl bg-slate-900 border border-slate-800 text-white font-medium px-4 pr-10 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 transition shadow-sm"
+                    value={displayTimezone}
+                    onChange={(e) => setDisplayTimezone(e.target.value)}
+                    className="w-full rounded-lg bg-slate-900 border border-slate-800 text-white font-medium px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
-                    <option value="">Select user</option>
-                    {users.map((u) => (
-                      <option key={u.id} value={u.id}>
-                        {u.name} ({u.email})
+                    {TIMEZONE_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
                       </option>
                     ))}
                   </select>
-                  <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
-                    <svg
-                      className="w-4 h-4 text-slate-400 transition-transform group-focus-within:rotate-180"
-                      xmlns="http://www.w3.org/2000/svg"
-                      viewBox="0 0 20 20"
-                      fill="currentColor"
-                    >
-                      <path
-                        fillRule="evenodd"
-                        d="M5.23 7.21a.75.75 0 011.06.02L10 11.17l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
-                        clipRule="evenodd"
-                      />
-                    </svg>
-                  </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setShowAddUserModal(true)}
-                  disabled={!selectedUser}
-                  className="h-11 rounded-full bg-blue-600 hover:bg-blue-500 disabled:bg-slate-800 disabled:hover:bg-slate-800 text-white disabled:text-slate-500 font-medium px-4 transition inline-flex items-center gap-2"
-                  title="Add user"
-                >
-                  <span aria-hidden>+</span> Add
-                </button>
-              </div>
-            </div>
-            <div className="w-full md:flex-1 min-w-[220px]">
-              <label className="block text-sm font-medium text-slate-400 mb-1">Mentor</label>
-              <div className="flex gap-2">
-                <div className="relative flex-1 min-w-[260px] group">
-                  <select
-                    value={selectedMentor ? selectedMentor.id : ""}
-                    onChange={(e) => {
-                      const id = e.target.value;
-                      if (!id) {
-                        setSelectedMentor(null);
-                        setMentorEmail("");
-                        return;
-                      }
-                      setSelectedMentor(mentors.find((m) => m.id === id) || null);
-                    }}
-                    className="w-full min-w-[260px] h-11 appearance-none rounded-xl bg-slate-900 border border-slate-800 text-white font-medium px-4 pr-10 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 transition shadow-sm"
-                  >
-                    <option value="">Select mentor</option>
-                    {mentors.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.name} ({m.email})
-                      </option>
-                    ))}
-                  </select>
-                  <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
-                    <svg
-                      className="w-4 h-4 text-slate-400 transition-transform group-focus-within:rotate-180"
-                      xmlns="http://www.w3.org/2000/svg"
-                      viewBox="0 0 20 20"
-                      fill="currentColor"
-                    >
-                      <path
-                        fillRule="evenodd"
-                        d="M5.23 7.21a.75.75 0 011.06.02L10 11.17l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
-                        clipRule="evenodd"
-                      />
-                    </svg>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShowAddMentorModal(true)}
-                  disabled={!selectedMentor}
-                  className="h-11 rounded-full bg-blue-600 hover:bg-blue-500 disabled:bg-slate-800 disabled:hover:bg-slate-800 text-white disabled:text-slate-500 font-medium px-4 transition inline-flex items-center gap-2"
-                  title="Add mentor"
-                >
-                  <span aria-hidden>+</span> Add
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-2xl bg-slate-900 border border-slate-800 overflow-hidden p-4 flex flex-col">
-            {!availabilityTarget ? (
-              <>
-                <div className="flex items-center justify-between mb-3">
-                  <div>
-                    <h3 className="text-sm font-semibold text-white">Meetings</h3>
-                    <p className="text-xs text-slate-400">
-                      Showing today and next 6 days
-                    </p>
-                  </div>
-                </div>
-                <div className="flex-1 overflow-y-auto">
-                  <div className="grid grid-cols-1 md:grid-cols-7 gap-3">
-                    {upcomingDays.map(({ key, label }) => {
-                      const dayMeetings = meetingsByDate[key] || [];
-                      const day = DateTime.fromISO(`${key}T00:00:00`, { zone: selectedTimezone });
-                      const dayName = day.toFormat("ccc");
-                      const dayDate = day.toFormat("dd LLL");
-                      const tzLabel = displayTimezone === "IST" ? "IST" : "GMT";
-                      return (
-                        <div
-                          key={key}
-                          className="rounded-xl bg-slate-900/80 border border-slate-800 px-3 py-2 flex flex-col min-h-[120px]"
+                <div className="w-full md:flex-1 min-w-[220px]">
+                  <label className="block text-sm font-medium text-slate-400 mb-1">
+                    User
+                  </label>
+                  <div className="flex gap-2">
+                    <div className="relative flex-1 min-w-[260px] group">
+                      <select
+                        value={selectedUser ? selectedUser.id : ""}
+                        onChange={(e) => {
+                          const id = e.target.value;
+                          if (!id) {
+                            setSelectedUser(null);
+                            setUserEmail("");
+                            return;
+                          }
+                          setSelectedUser(
+                            users.find((u) => u.id === id) || null,
+                          );
+                        }}
+                        className="w-full min-w-[260px] h-11 appearance-none rounded-xl bg-slate-900 border border-slate-800 text-white font-medium px-4 pr-10 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 transition shadow-sm"
+                      >
+                        <option value="">Select user</option>
+                        {users.map((u) => (
+                          <option key={u.id} value={u.id}>
+                            {u.name} ({u.email})
+                          </option>
+                        ))}
+                      </select>
+                      <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
+                        <svg
+                          className="w-4 h-4 text-slate-400 transition-transform group-focus-within:rotate-180"
+                          xmlns="http://www.w3.org/2000/svg"
+                          viewBox="0 0 20 20"
+                          fill="currentColor"
                         >
-                          <div className="mb-2">
-                            <p className="text-xs font-semibold text-slate-200">{dayName}</p>
-                            <p className="text-xs text-slate-500">{dayDate}</p>
-                          </div>
-                          <div className="space-y-2">
-                            {dayMeetings.map((m) => (
-                              <button
-                                key={m.id}
-                                type="button"
-                                onClick={() => setActiveMeeting(m)}
-                                className="w-full text-left rounded-lg bg-slate-800/80 border border-slate-700 px-3 py-2 hover:bg-slate-800 transition"
-                              >
-                                <p className="text-xs font-semibold text-white truncate">{m.title}</p>
-                                <p className="text-[11px] text-slate-300 mt-0.5">
-                                  {m.localStartLabel} – {m.localEndLabel} {tzLabel}
+                          <path
+                            fillRule="evenodd"
+                            d="M5.23 7.21a.75.75 0 011.06.02L10 11.17l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
+                            clipRule="evenodd"
+                          />
+                        </svg>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowAddUserModal(true)}
+                      disabled={!selectedUser}
+                      className="h-11 rounded-full bg-blue-600 hover:bg-blue-500 disabled:bg-slate-800 disabled:hover:bg-slate-800 text-white disabled:text-slate-500 font-medium px-4 transition inline-flex items-center gap-2"
+                      title="Add user"
+                    >
+                      <span aria-hidden>+</span> Add
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-2xl bg-slate-900 border border-slate-800 overflow-hidden p-4 flex flex-col">
+                {!selectedUser ? (
+                  <>
+                    <div className="flex items-center justify-between mb-3">
+                      <div>
+                        <h3 className="text-sm font-semibold text-white">
+                          Meetings
+                        </h3>
+                        <p className="text-xs text-slate-400">
+                          Showing today and next 6 days
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex-1 overflow-y-auto">
+                      <div className="grid grid-cols-1 md:grid-cols-7 gap-3">
+                        {upcomingDays.map(({ key, label }) => {
+                          const dayMeetings = meetingsByDate[key] || [];
+                          const day = DateTime.fromISO(`${key}T00:00:00`, {
+                            zone: selectedTimezone,
+                          });
+                          const dayName = day.toFormat("ccc");
+                          const dayDate = day.toFormat("dd LLL");
+                          const tzLabel =
+                            displayTimezone === "IST" ? "IST" : "GMT";
+                          return (
+                            <div
+                              key={key}
+                              className="rounded-xl bg-slate-900/80 border border-slate-800 px-3 py-2 flex flex-col min-h-[120px]"
+                            >
+                              <div className="mb-2">
+                                <p className="text-xs font-semibold text-slate-200">
+                                  {dayName}
                                 </p>
-                              </button>
+                                <p className="text-xs text-slate-500">
+                                  {dayDate}
+                                </p>
+                              </div>
+                              <div className="space-y-2">
+                                {dayMeetings.map((m) => (
+                                  <button
+                                    key={m.id}
+                                    type="button"
+                                    onClick={() => setActiveMeeting(m)}
+                                    className="w-full text-left rounded-lg bg-slate-800/80 border border-slate-700 px-3 py-2 hover:bg-slate-800 transition"
+                                  >
+                                    <p className="text-xs font-semibold text-white truncate">
+                                      {m.title}
+                                    </p>
+                                    <p className="text-[11px] text-slate-300 mt-0.5">
+                                      {m.localStartLabel} – {m.localEndLabel}{" "}
+                                      {tzLabel}
+                                    </p>
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="space-y-6">
+                    {/* User Profile Card */}
+                    <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-4 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-sm font-semibold text-white">
+                          User Profile
+                        </h3>
+                        <span className="inline-flex rounded-full bg-blue-500/10 px-2 py-0.5 text-[10px] font-semibold text-blue-400">
+                          USER
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                        <div>
+                          <span className="text-slate-500">Name:</span>{" "}
+                          <span className="text-slate-200 font-medium">
+                            {selectedUser.name}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500">Email:</span>{" "}
+                          <span className="text-slate-200 font-medium">
+                            {selectedUser.email}
+                          </span>
+                        </div>
+                      </div>
+                      {selectedUser.description && (
+                        <div className="text-xs pt-1 border-t border-white/[0.04]">
+                          <span className="text-slate-500 block mb-0.5">
+                            Description:
+                          </span>
+                          <p className="text-slate-300 italic">
+                            {selectedUser.description}
+                          </p>
+                        </div>
+                      )}
+                      {selectedUser.tags && selectedUser.tags.length > 0 && (
+                        <div className="text-xs pt-1">
+                          <span className="text-slate-500 block mb-1">
+                            Tags:
+                          </span>
+                          <div className="flex flex-wrap gap-1">
+                            {selectedUser.tags.map((t) => (
+                              <span
+                                key={t}
+                                className="rounded-full border border-white/[0.08] bg-white/[0.04] px-2 py-0.5 text-[10px] text-slate-300"
+                              >
+                                {t}
+                              </span>
                             ))}
                           </div>
                         </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </>
-            ) : loadingUserAvail || loadingMentorAvail ? (
-              <div className="flex items-center justify-center h-64">
-                <p className="text-slate-400 text-sm">Loading availability...</p>
-              </div>
-            ) : (
-              <>
-                <div className="flex items-center justify-between gap-2 mb-4">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    {selectedUser && (
-                      <span className="text-slate-300 text-sm">
-                        User: {selectedUser.name}
-                      </span>
-                    )}
-                    {selectedUser && selectedMentor && <span className="text-slate-500">|</span>}
-                    {selectedMentor && (
-                      <span className="text-slate-300 text-sm">
-                        Mentor: {selectedMentor.name}
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-slate-400 text-xs">
-                    Showing today and next 6 days ({displayTimezone})
-                  </div>
-                </div>
-                <div className="flex-1 overflow-y-auto">
-                  <table className="w-full border-collapse table-auto">
-                    <thead>
-                      <tr className="border-b border-slate-700">
-                        <th className="py-4 px-4 text-left text-sm font-semibold text-slate-200 w-[150px] whitespace-nowrap">
-                          Date
-                        </th>
-                        <th className="py-4 px-4 text-left text-sm font-semibold text-slate-200 whitespace-nowrap">
-                          User Availability
-                        </th>
-                        <th className="py-4 px-4 text-left text-xs md:text-sm font-semibold text-slate-200 whitespace-nowrap">
-                          Mentor Availability
-                        </th>
-                        <th className="py-4 px-4 text-left text-sm font-semibold text-slate-200 whitespace-nowrap">
-                          Common Times
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {upcomingDays.map(({ key, label }, index) => {
-                        const userSlots = userByLocalDate.byDate[key]?.slots ?? [];
-                        const mentorSlots = mentorByLocalDate.byDate[key]?.slots ?? [];
-                        const commonIntervals = computeCommonSlotsForDay(userSlots, mentorSlots);
-                        const commonText =
-                          commonIntervals.length > 0
-                            ? commonIntervals
-                                .map(({ startHm, endHm }) =>
-                                  formatTimeRange(`${startHm} – ${endHm}`)
-                                )
-                                .join(", ")
-                            : "—";
-                        const rowBg =
-                          index % 2 === 0 ? "bg-slate-900/40" : "bg-slate-900/20";
-                        return (
-                          <tr key={key} className={`${rowBg} border-b border-slate-800/80`}>
-                            <td className="py-4 px-4 text-sm font-semibold text-slate-200 whitespace-nowrap align-middle">
-                              {label}
-                            </td>
-                            <td className="py-4 px-4 text-sm text-slate-300 align-top">
-                              {userSlots.length === 0 ? (
-                                <span className="text-slate-500">No availability</span>
-                              ) : (
-                                <div className="flex flex-wrap gap-2">
-                                  {userSlots.map((slot) => (
-                                    <span
-                                      key={slot.startTime}
-                                      className="inline-flex items-center rounded-md bg-slate-800/90 border border-slate-600 px-2 py-1 text-xs text-slate-100"
-                                    >
-                                      {formatTimeRange(
-                                        `${slot.convertedStart} – ${slot.convertedEnd}`
-                                      )}
-                                    </span>
-                                  ))}
-                                </div>
-                              )}
-                            </td>
-                            <td className="py-4 px-4 text-sm text-slate-300 align-top">
-                              {mentorSlots.length === 0 ? (
-                                <span className="text-slate-500">No availability</span>
-                              ) : (
-                                <div className="flex flex-wrap gap-2">
-                                  {mentorSlots.map((slot) => (
-                                    <span
-                                      key={slot.startTime}
-                                      className="inline-flex items-center rounded-md bg-slate-800/90 border border-slate-600 px-2 py-1 text-xs text-slate-100"
-                                    >
-                                      {formatTimeRange(
-                                        `${slot.convertedStart} – ${slot.convertedEnd}`
-                                      )}
-                                    </span>
-                                  ))}
-                                </div>
-                              )}
-                            </td>
-                            <td className="py-4 px-4 text-sm text-slate-100 align-top">
-                              {commonIntervals.length === 0 ? (
-                                <span className="text-slate-500">—</span>
-                              ) : (
-                                <div className="flex flex-wrap gap-2">
-                                  {commonIntervals.map(({ startHm, endHm }, idx) => {
-                                    const slotKey = `${key}-${startHm}-${endHm}`;
-                                    const isSelected = selectedCommonSlot === slotKey;
-                                    return (
-                                      <button
-                                        key={slotKey}
-                                        type="button"
-                                        onClick={() => {
-                                          setSelectedCommonSlot(slotKey);
-                                          const dateStr = key; // yyyy-MM-dd in selected timezone
-                                          const labelRange = formatTimeRange(`${startHm} – ${endHm}`);
-                                          const { start, end } = parse12RangeTo24(labelRange);
-                                          setScheduleDate(dateStr);
-                                          if (start) {
-                                            const p = hm24To12Parts(start);
-                                            setScheduleStartHour(p.hour);
-                                            setScheduleStartMinute(p.minute);
-                                            setScheduleStartAmPm(p.amPm);
-                                          }
-                                          if (end) {
-                                            const p = hm24To12Parts(end);
-                                            setScheduleEndHour(p.hour);
-                                            setScheduleEndMinute(p.minute);
-                                            setScheduleEndAmPm(p.amPm);
-                                          }
-                                          setScheduleInlineError("");
+                      )}
+                    </div>
 
-                                          const userEmailLocal = userEmail || selectedUser?.email || "";
-                                          const mentorEmailLocal = mentorEmail || selectedMentor?.email || "";
-                                          const userName =
-                                            userEmailLocal.split("@")[0] || "user";
-                                          const mentorName =
-                                            mentorEmailLocal.split("@")[0] || "mentor";
-                                          setScheduleTitle(`MTQ<>${userName}:${mentorName}`);
-                                        }}
-                                        className={`inline-flex items-center rounded-md px-2 py-1 text-xs ${
-                                          isSelected
-                                            ? "bg-emerald-700 border border-emerald-300 text-emerald-50"
-                                            : "bg-emerald-800/70 border border-emerald-400 text-emerald-100"
-                                        }`}
-                                      >
-                                        {formatTimeRange(`${startHm} – ${endHm}`)}
-                                      </button>
+                    {/* Mentor Ranking List */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-sm font-semibold text-white">
+                          Recommended Mentors (Ranking)
+                        </h3>
+                        {loadingRecs && (
+                          <span className="text-xs text-slate-400 animate-pulse">
+                            Fetching recommendations...
+                          </span>
+                        )}
+                      </div>
+
+                      {recommendations.length === 0 && !loadingRecs ? (
+                        <div className="text-xs text-slate-500 italic p-3 rounded-lg border border-dashed border-white/[0.08] text-center">
+                          No recommendations found.
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {recommendations.map((rec) => {
+                            const isSelected =
+                              selectedMentor?.id === rec.mentor.id;
+                            const hasOverlapSlot = hasOverlap(rec.mentor.id);
+
+                            return (
+                              <button
+                                key={rec.mentor.id}
+                                type="button"
+                                disabled={!hasOverlapSlot && !isSelected}
+                                onClick={() => {
+                                  setSelectedMentor(rec.mentor);
+                                  setMentorEmail(rec.mentor.email);
+                                }}
+                                className={`w-full text-left p-3.5 rounded-xl border transition-all flex flex-col justify-between ${
+                                  isSelected
+                                    ? "bg-blue-600/10 border-blue-500 shadow-[0_0_12px_rgba(59,130,246,0.15)]"
+                                    : !hasOverlapSlot
+                                      ? "bg-slate-950/20 border-slate-900 opacity-40 cursor-not-allowed"
+                                      : "bg-white/[0.02] border-white/[0.08] hover:bg-white/[0.05] hover:border-white/[0.15]"
+                                }`}
+                              >
+                                <div className="space-y-1.5 w-full">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="font-semibold text-xs text-white truncate">
+                                      {rec.mentor.name}
+                                    </span>
+                                    <span
+                                      className={`shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-md ${
+                                        isSelected
+                                          ? "bg-blue-500 text-white"
+                                          : "bg-white/[0.06] text-slate-300"
+                                      }`}
+                                    >
+                                      {rec.score}% Match
+                                    </span>
+                                  </div>
+
+                                  {rec.mentor.description && (
+                                    <p className="text-[11px] text-slate-400 line-clamp-2 italic">
+                                      {rec.mentor.description}
+                                    </p>
+                                  )}
+
+                                  {rec.mentor.tags &&
+                                    rec.mentor.tags.length > 0 && (
+                                      <div className="flex flex-wrap gap-1 pt-1">
+                                        {rec.mentor.tags
+                                          .slice(0, 3)
+                                          .map((t) => (
+                                            <span
+                                              key={t}
+                                              className="rounded-full bg-white/[0.04] px-2 py-0.5 text-[9px] text-slate-300 border border-white/[0.06]"
+                                            >
+                                              {t}
+                                            </span>
+                                          ))}
+                                        {rec.mentor.tags.length > 3 && (
+                                          <span className="text-[9px] text-slate-500 self-center">
+                                            +{rec.mentor.tags.length - 3}
+                                          </span>
+                                        )}
+                                      </div>
+                                    )}
+
+                                  <div className="text-[10px] text-slate-500 leading-normal pt-1.5 border-t border-white/[0.04] w-full">
+                                    <span className="font-medium text-slate-400">
+                                      Reason:
+                                    </span>{" "}
+                                    {rec.explanation.split(". ")[1] ||
+                                      rec.explanation}
+                                  </div>
+                                </div>
+
+                                {!hasOverlapSlot && (
+                                  <div className="mt-2 text-[9px] font-semibold text-red-400/80 bg-red-950/20 border border-red-900/30 rounded px-1.5 py-0.5 self-start">
+                                    No overlap found
+                                  </div>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Overlap Table (Only when selectedMentor is set) */}
+                    {selectedMentor ? (
+                      <>
+                        <div className="h-px bg-white/[0.08]" />
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <h3 className="text-sm font-semibold text-white">
+                            Availability Overlap
+                          </h3>
+                          <div className="text-slate-400 text-xs font-medium">
+                            Showing today and next 6 days ({displayTimezone})
+                          </div>
+                        </div>
+
+                        {totalCommonSlotsAcrossWeek === 0 ? (
+                          <div className="text-xs text-red-400/90 bg-red-500/10 border border-red-500/20 rounded-lg p-3">
+                            No overlap found. Please choose another mentor.
+                          </div>
+                        ) : (
+                          <div className="overflow-x-auto">
+                            <table className="w-full border-collapse table-auto">
+                              <thead>
+                                <tr className="border-b border-slate-700">
+                                  <th className="py-4 px-4 text-left text-sm font-semibold text-slate-200 w-[150px] whitespace-nowrap">
+                                    Date
+                                  </th>
+                                  <th className="py-4 px-4 text-left text-sm font-semibold text-slate-200 whitespace-nowrap">
+                                    User Availability
+                                  </th>
+                                  <th className="py-4 px-4 text-left text-xs md:text-sm font-semibold text-slate-200 whitespace-nowrap">
+                                    Mentor Availability
+                                  </th>
+                                  <th className="py-4 px-4 text-left text-sm font-semibold text-slate-200 whitespace-nowrap">
+                                    Common Times
+                                  </th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {upcomingDays.map(({ key, label }, index) => {
+                                  const userSlots =
+                                    userByLocalDate.byDate[key]?.slots ?? [];
+                                  const mentorSlots =
+                                    mentorByLocalDate.byDate[key]?.slots ?? [];
+                                  const commonIntervals =
+                                    computeCommonSlotsForDay(
+                                      userSlots,
+                                      mentorSlots,
                                     );
-                                  })}
-                                </div>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
+                                  const rowBg =
+                                    index % 2 === 0
+                                      ? "bg-slate-900/40"
+                                      : "bg-slate-900/20";
+                                  return (
+                                    <tr
+                                      key={key}
+                                      className={`${rowBg} border-b border-slate-800/80`}
+                                    >
+                                      <td className="py-4 px-4 text-sm font-semibold text-slate-200 whitespace-nowrap align-middle">
+                                        {label}
+                                      </td>
+                                      <td className="py-4 px-4 text-sm text-slate-300 align-top">
+                                        {userSlots.length === 0 ? (
+                                          <span className="text-slate-500">
+                                            No availability
+                                          </span>
+                                        ) : (
+                                          <div className="flex flex-wrap gap-2">
+                                            {userSlots.map((slot) => {
+                                              const isCommon = isSlotCommon(
+                                                slot,
+                                                key,
+                                                mentorSlots,
+                                              );
+                                              return (
+                                                <span
+                                                  key={slot.startTime}
+                                                  className={`inline-flex items-center rounded-md px-2 py-1 text-xs ${
+                                                    isCommon
+                                                      ? "bg-emerald-950/40 border border-emerald-500/40 text-emerald-300 font-semibold"
+                                                      : "bg-slate-800/90 border border-slate-600/40 text-slate-400 opacity-60"
+                                                  }`}
+                                                >
+                                                  {formatTimeRange(
+                                                    `${slot.convertedStart} – ${slot.convertedEnd}`,
+                                                  )}
+                                                </span>
+                                              );
+                                            })}
+                                          </div>
+                                        )}
+                                      </td>
+                                      <td className="py-4 px-4 text-sm text-slate-300 align-top">
+                                        {mentorSlots.length === 0 ? (
+                                          <span className="text-slate-500">
+                                            No availability
+                                          </span>
+                                        ) : (
+                                          <div className="flex flex-wrap gap-2">
+                                            {mentorSlots.map((slot) => {
+                                              const isCommon = isSlotCommon(
+                                                slot,
+                                                key,
+                                                userSlots,
+                                              );
+                                              return (
+                                                <span
+                                                  key={slot.startTime}
+                                                  className={`inline-flex items-center rounded-md px-2 py-1 text-xs ${
+                                                    isCommon
+                                                      ? "bg-emerald-950/40 border border-emerald-500/40 text-emerald-300 font-semibold"
+                                                      : "bg-slate-800/90 border border-slate-600/40 text-slate-400 opacity-60"
+                                                  }`}
+                                                >
+                                                  {formatTimeRange(
+                                                    `${slot.convertedStart} – ${slot.convertedEnd}`,
+                                                  )}
+                                                </span>
+                                              );
+                                            })}
+                                          </div>
+                                        )}
+                                      </td>
+                                      <td className="py-4 px-4 text-sm text-slate-100 align-top">
+                                        {commonIntervals.length === 0 ? (
+                                          <span className="text-slate-500">
+                                            —
+                                          </span>
+                                        ) : (
+                                          <div className="flex flex-wrap gap-2">
+                                            {commonIntervals.map(
+                                              ({ startHm, endHm }) => {
+                                                const slotKey = `${key}-${startHm}-${endHm}`;
+                                                const isSelected =
+                                                  selectedCommonSlot ===
+                                                  slotKey;
+                                                return (
+                                                  <button
+                                                    key={slotKey}
+                                                    type="button"
+                                                    onClick={() => {
+                                                      setSelectedCommonSlot(
+                                                        slotKey,
+                                                      );
+                                                      const dateStr = key;
+                                                      const labelRange =
+                                                        formatTimeRange(
+                                                          `${startHm} – ${endHm}`,
+                                                        );
+                                                      const { start, end } =
+                                                        parse12RangeTo24(
+                                                          labelRange,
+                                                        );
+                                                      setScheduleDate(dateStr);
+                                                      if (start) {
+                                                        const p =
+                                                          hm24To12Parts(start);
+                                                        setScheduleStartHour(
+                                                          p.hour,
+                                                        );
+                                                        setScheduleStartMinute(
+                                                          p.minute,
+                                                        );
+                                                        setScheduleStartAmPm(
+                                                          p.amPm,
+                                                        );
+                                                      }
+                                                      if (end) {
+                                                        const p =
+                                                          hm24To12Parts(end);
+                                                        setScheduleEndHour(
+                                                          p.hour,
+                                                        );
+                                                        setScheduleEndMinute(
+                                                          p.minute,
+                                                        );
+                                                        setScheduleEndAmPm(
+                                                          p.amPm,
+                                                        );
+                                                      }
+                                                      setScheduleInlineError(
+                                                        "",
+                                                      );
 
-        {/* RIGHT: Schedule Meeting sidebar */}
-        <div
-          className="min-w-0 flex-shrink-0"
-          style={{ flex: "0 0 30%", width: "30%", maxWidth: "30%" }}
-        >
-          <div className="rounded-2xl bg-slate-900 border border-slate-800 p-4 flex flex-col">
-            <h2 className="text-lg font-semibold text-white mb-3">Schedule Meeting</h2>
-            <form onSubmit={handleScheduleMeeting} className="space-y-3 flex-1 flex flex-col">
-              <div>
-                <label className="block text-sm font-medium text-slate-400 mb-1">Admin email</label>
-                <input
-                  type="email"
-                  value={adminEmail}
-                  disabled
-                  className="w-full box-border rounded-lg bg-slate-950 border border-slate-800 text-slate-400 px-4 py-1.5 cursor-not-allowed"
-                />
+                                                      const userEmailLocal =
+                                                        userEmail ||
+                                                        selectedUser?.email ||
+                                                        "";
+                                                      const mentorEmailLocal =
+                                                        mentorEmail ||
+                                                        selectedMentor?.email ||
+                                                        "";
+                                                      const userName =
+                                                        userEmailLocal.split(
+                                                          "@",
+                                                        )[0] || "user";
+                                                      const mentorName =
+                                                        mentorEmailLocal.split(
+                                                          "@",
+                                                        )[0] || "mentor";
+                                                      setScheduleTitle(
+                                                        `MTQ<>${userName}:${mentorName}`,
+                                                      );
+                                                    }}
+                                                    className={`inline-flex items-center rounded-md px-2 py-1 text-xs ${
+                                                      isSelected
+                                                        ? "bg-emerald-700 border border-emerald-300 text-emerald-50"
+                                                        : "bg-emerald-800/70 border border-emerald-400 text-emerald-100"
+                                                    }`}
+                                                  >
+                                                    {formatTimeRange(
+                                                      `${startHm} – ${endHm}`,
+                                                    )}
+                                                  </button>
+                                                );
+                                              },
+                                            )}
+                                          </div>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div className="text-xs text-slate-400 bg-white/[0.02] border border-white/[0.05] rounded-lg p-4 text-center">
+                        Click on a recommended mentor above to view their
+                        availability overlap.
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-400 mb-1">User email</label>
-                <input
-                  type="email"
-                  value={userEmail}
-                  onChange={(e) => setUserEmail(e.target.value)}
-                  className="w-full box-border rounded-lg bg-slate-950 border border-slate-800 text-white px-4 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="user@example.com"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-400 mb-1">Mentor email</label>
-                <input
-                  type="email"
-                  value={mentorEmail}
-                  onChange={(e) => setMentorEmail(e.target.value)}
-                  className="w-full box-border rounded-lg bg-slate-950 border border-slate-800 text-white px-4 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="mentor@example.com"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-400 mb-1">Additional emails</label>
-                {additionalEmails.map((email, i) => (
-                  <div key={i} className="flex items-stretch gap-2 mb-2">
+            </div>
+
+            {/* RIGHT: Schedule Meeting sidebar */}
+            <div
+              className="min-w-0 flex-shrink-0"
+              style={{ flex: "0 0 30%", width: "30%", maxWidth: "30%" }}
+            >
+              <div className="rounded-2xl bg-slate-900 border border-slate-800 p-4 flex flex-col">
+                <h2 className="text-lg font-semibold text-white mb-3">
+                  Schedule Meeting
+                </h2>
+                <form
+                  onSubmit={handleScheduleMeeting}
+                  className="space-y-3 flex-1 flex flex-col"
+                >
+                  <div>
+                    <label className="block text-sm font-medium text-slate-400 mb-1">
+                      Admin email
+                    </label>
                     <input
                       type="email"
-                      value={email}
-                      onChange={(e) => setAdditionalEmail(i, e.target.value)}
-                      className="flex-1 min-w-0 box-border rounded-lg bg-slate-950 border border-slate-800 text-white px-4 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="email@example.com"
+                      value={adminEmail}
+                      disabled
+                      className="w-full box-border rounded-lg bg-slate-950 border border-slate-800 text-slate-400 px-4 py-1.5 cursor-not-allowed"
                     />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-400 mb-1">
+                      User email
+                    </label>
+                    <input
+                      type="email"
+                      value={userEmail}
+                      onChange={(e) => setUserEmail(e.target.value)}
+                      className="w-full box-border rounded-lg bg-slate-950 border border-slate-800 text-white px-4 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="user@example.com"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-400 mb-1">
+                      Mentor email
+                    </label>
+                    <input
+                      type="email"
+                      value={mentorEmail}
+                      onChange={(e) => setMentorEmail(e.target.value)}
+                      className="w-full box-border rounded-lg bg-slate-950 border border-slate-800 text-white px-4 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="mentor@example.com"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-400 mb-1">
+                      Additional emails
+                    </label>
+                    {additionalEmails.map((email, i) => (
+                      <div key={i} className="flex items-stretch gap-2 mb-2">
+                        <input
+                          type="email"
+                          value={email}
+                          onChange={(e) =>
+                            setAdditionalEmail(i, e.target.value)
+                          }
+                          className="flex-1 min-w-0 box-border rounded-lg bg-slate-950 border border-slate-800 text-white px-4 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          placeholder="email@example.com"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeAdditionalEmail(i)}
+                          className="rounded-lg bg-slate-800 border border-slate-700 px-3 py-2 text-slate-400 hover:text-white text-sm whitespace-nowrap"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))}
                     <button
                       type="button"
-                      onClick={() => removeAdditionalEmail(i)}
-                      className="rounded-lg bg-slate-800 border border-slate-700 px-3 py-2 text-slate-400 hover:text-white text-sm whitespace-nowrap"
+                      onClick={addAdditionalEmail}
+                      className="text-sm text-blue-400 hover:underline"
                     >
-                      Remove
+                      + Add email
                     </button>
                   </div>
-                ))}
-                <button
-                  type="button"
-                  onClick={addAdditionalEmail}
-                  className="text-sm text-blue-400 hover:underline"
-                >
-                  + Add email
-                </button>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-400 mb-1">
+                      Meeting name
+                    </label>
+                    <input
+                      type="text"
+                      value={scheduleTitle}
+                      onChange={(e) => setScheduleTitle(e.target.value)}
+                      required
+                      className="w-full box-border rounded-lg bg-slate-950 border border-slate-800 text-white px-4 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="Meeting title"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-400 mb-1">
+                      Date
+                    </label>
+                    <input
+                      type="date"
+                      value={scheduleDate}
+                      onChange={(e) => {
+                        setScheduleDate(e.target.value);
+                        setScheduleInlineError("");
+                      }}
+                      className="w-full box-border rounded-lg bg-slate-950 border border-slate-800 text-white px-4 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 [color-scheme:dark]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-400 mb-1">
+                      Start time
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={scheduleStartHour}
+                        onChange={(e) => {
+                          setScheduleStartHour(e.target.value);
+                          setScheduleInlineError("");
+                        }}
+                        className={scheduleTimeSelectClass}
+                        aria-label="Start hour"
+                      >
+                        <option value="">Hour</option>
+                        {SCHEDULE_HOUR_OPTIONS.map((h) => (
+                          <option key={h} value={h}>
+                            {h}
+                          </option>
+                        ))}
+                      </select>
+                      <span className="text-slate-400 shrink-0" aria-hidden>
+                        :
+                      </span>
+                      <select
+                        value={scheduleStartMinute}
+                        onChange={(e) => {
+                          setScheduleStartMinute(e.target.value);
+                          setScheduleInlineError("");
+                        }}
+                        className={scheduleTimeSelectClass}
+                        aria-label="Start minute"
+                      >
+                        <option value="">Min</option>
+                        {SCHEDULE_MINUTE_OPTIONS.map((m) => (
+                          <option key={m} value={m}>
+                            {m}
+                          </option>
+                        ))}
+                      </select>
+                      <select
+                        value={scheduleStartAmPm}
+                        onChange={(e) => {
+                          setScheduleStartAmPm(e.target.value);
+                          setScheduleInlineError("");
+                        }}
+                        className={scheduleTimeSelectClass}
+                        aria-label="Start AM or PM"
+                      >
+                        <option value="">AM/PM</option>
+                        {SCHEDULE_AMPM_OPTIONS.map((ap) => (
+                          <option key={ap} value={ap}>
+                            {ap}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-400 mb-1">
+                      End time
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={scheduleEndHour}
+                        onChange={(e) => {
+                          setScheduleEndHour(e.target.value);
+                          setScheduleInlineError("");
+                        }}
+                        className={scheduleTimeSelectClass}
+                        aria-label="End hour"
+                      >
+                        <option value="">Hour</option>
+                        {SCHEDULE_HOUR_OPTIONS.map((h) => (
+                          <option key={h} value={h}>
+                            {h}
+                          </option>
+                        ))}
+                      </select>
+                      <span className="text-slate-400 shrink-0" aria-hidden>
+                        :
+                      </span>
+                      <select
+                        value={scheduleEndMinute}
+                        onChange={(e) => {
+                          setScheduleEndMinute(e.target.value);
+                          setScheduleInlineError("");
+                        }}
+                        className={scheduleTimeSelectClass}
+                        aria-label="End minute"
+                      >
+                        <option value="">Min</option>
+                        {SCHEDULE_MINUTE_OPTIONS.map((m) => (
+                          <option key={m} value={m}>
+                            {m}
+                          </option>
+                        ))}
+                      </select>
+                      <select
+                        value={scheduleEndAmPm}
+                        onChange={(e) => {
+                          setScheduleEndAmPm(e.target.value);
+                          setScheduleInlineError("");
+                        }}
+                        className={scheduleTimeSelectClass}
+                        aria-label="End AM or PM"
+                      >
+                        <option value="">AM/PM</option>
+                        {SCHEDULE_AMPM_OPTIONS.map((ap) => (
+                          <option key={ap} value={ap}>
+                            {ap}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  {scheduleInlineError && (
+                    <div className="rounded-lg bg-red-500/10 border border-red-500/30 text-red-300 text-xs px-3 py-2">
+                      {scheduleInlineError}
+                    </div>
+                  )}
+                  {success && (
+                    <div className="rounded-lg bg-emerald-900/30 border border-emerald-500/40 text-emerald-200 text-xs px-3 py-2">
+                      {success}
+                    </div>
+                  )}
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="w-full rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium px-6 py-2.5 transition disabled:opacity-50"
+                  >
+                    {loading ? "Saving..." : "Schedule Meeting"}
+                  </button>
+                </form>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-400 mb-1">Meeting name</label>
-                <input
-                  type="text"
-                  value={scheduleTitle}
-                  onChange={(e) => setScheduleTitle(e.target.value)}
-                  required
-                  className="w-full box-border rounded-lg bg-slate-950 border border-slate-800 text-white px-4 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Meeting title"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-400 mb-1">Date</label>
-                <input
-                  type="date"
-                  value={scheduleDate}
-                  onChange={(e) => {
-                    setScheduleDate(e.target.value);
-                    setScheduleInlineError("");
-                  }}
-                  className="w-full box-border rounded-lg bg-slate-950 border border-slate-800 text-white px-4 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 [color-scheme:dark]"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-400 mb-1">Start time</label>
-                <div className="flex items-center gap-2">
-                  <select
-                    value={scheduleStartHour}
-                    onChange={(e) => {
-                      setScheduleStartHour(e.target.value);
-                      setScheduleInlineError("");
-                    }}
-                    className={scheduleTimeSelectClass}
-                    aria-label="Start hour"
-                  >
-                    <option value="">Hour</option>
-                    {SCHEDULE_HOUR_OPTIONS.map((h) => (
-                      <option key={h} value={h}>
-                        {h}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="text-slate-400 shrink-0" aria-hidden>
-                    :
-                  </span>
-                  <select
-                    value={scheduleStartMinute}
-                    onChange={(e) => {
-                      setScheduleStartMinute(e.target.value);
-                      setScheduleInlineError("");
-                    }}
-                    className={scheduleTimeSelectClass}
-                    aria-label="Start minute"
-                  >
-                    <option value="">Min</option>
-                    {SCHEDULE_MINUTE_OPTIONS.map((m) => (
-                      <option key={m} value={m}>
-                        {m}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    value={scheduleStartAmPm}
-                    onChange={(e) => {
-                      setScheduleStartAmPm(e.target.value);
-                      setScheduleInlineError("");
-                    }}
-                    className={scheduleTimeSelectClass}
-                    aria-label="Start AM or PM"
-                  >
-                    <option value="">AM/PM</option>
-                    {SCHEDULE_AMPM_OPTIONS.map((ap) => (
-                      <option key={ap} value={ap}>
-                        {ap}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-400 mb-1">End time</label>
-                <div className="flex items-center gap-2">
-                  <select
-                    value={scheduleEndHour}
-                    onChange={(e) => {
-                      setScheduleEndHour(e.target.value);
-                      setScheduleInlineError("");
-                    }}
-                    className={scheduleTimeSelectClass}
-                    aria-label="End hour"
-                  >
-                    <option value="">Hour</option>
-                    {SCHEDULE_HOUR_OPTIONS.map((h) => (
-                      <option key={h} value={h}>
-                        {h}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="text-slate-400 shrink-0" aria-hidden>
-                    :
-                  </span>
-                  <select
-                    value={scheduleEndMinute}
-                    onChange={(e) => {
-                      setScheduleEndMinute(e.target.value);
-                      setScheduleInlineError("");
-                    }}
-                    className={scheduleTimeSelectClass}
-                    aria-label="End minute"
-                  >
-                    <option value="">Min</option>
-                    {SCHEDULE_MINUTE_OPTIONS.map((m) => (
-                      <option key={m} value={m}>
-                        {m}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    value={scheduleEndAmPm}
-                    onChange={(e) => {
-                      setScheduleEndAmPm(e.target.value);
-                      setScheduleInlineError("");
-                    }}
-                    className={scheduleTimeSelectClass}
-                    aria-label="End AM or PM"
-                  >
-                    <option value="">AM/PM</option>
-                    {SCHEDULE_AMPM_OPTIONS.map((ap) => (
-                      <option key={ap} value={ap}>
-                        {ap}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              {scheduleInlineError && (
-                <div className="rounded-lg bg-red-500/10 border border-red-500/30 text-red-300 text-xs px-3 py-2">
-                  {scheduleInlineError}
-                </div>
-              )}
-              {success && (
-                <div className="rounded-lg bg-emerald-900/30 border border-emerald-500/40 text-emerald-200 text-xs px-3 py-2">
-                  {success}
-                </div>
-              )}
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium px-6 py-2.5 transition disabled:opacity-50"
-              >
-                {loading ? "Saving..." : "Schedule Meeting"}
-              </button>
-            </form>
+            </div>
           </div>
-        </div>
-      </div>
 
-      {/* Meetings calendar - full width below (when availability is shown) */}
-      {availabilityTarget && (
-        <div className="rounded-2xl bg-slate-900 border border-slate-800 p-6 mt-4">
-          <h2 className="text-lg font-semibold text-white mb-4">Meetings</h2>
-          <div className="grid grid-cols-1 md:grid-cols-7 gap-3">
-            {upcomingDays.map(({ key, label }) => {
-              const dayMeetings = meetingsByDate[key] || [];
-              const day = DateTime.fromISO(`${key}T00:00:00`, { zone: selectedTimezone });
-              const dayName = day.toFormat("ccc");
-              const dayDate = day.toFormat("dd LLL");
-              const tzLabel = displayTimezone === "IST" ? "IST" : "GMT";
+          {/* Meetings calendar - full width below (when availability is shown) */}
+          {availabilityTarget && (
+            <div className="rounded-2xl bg-slate-900 border border-slate-800 p-6 mt-4">
+              <h2 className="text-lg font-semibold text-white mb-4">
+                Meetings
+              </h2>
+              <div className="grid grid-cols-1 md:grid-cols-7 gap-3">
+                {upcomingDays.map(({ key, label }) => {
+                  const dayMeetings = meetingsByDate[key] || [];
+                  const day = DateTime.fromISO(`${key}T00:00:00`, {
+                    zone: selectedTimezone,
+                  });
+                  const dayName = day.toFormat("ccc");
+                  const dayDate = day.toFormat("dd LLL");
+                  const tzLabel = displayTimezone === "IST" ? "IST" : "GMT";
+                  return (
+                    <div
+                      key={key}
+                      className="rounded-xl bg-slate-900/80 border border-slate-800 px-3 py-2 flex flex-col min-h-[120px]"
+                    >
+                      <div className="mb-2">
+                        <p className="text-xs font-semibold text-slate-200">
+                          {dayName}
+                        </p>
+                        <p className="text-xs text-slate-500">{dayDate}</p>
+                      </div>
+                      <div className="space-y-2">
+                        {dayMeetings.map((m) => (
+                          <button
+                            key={m.id}
+                            type="button"
+                            onClick={() => setActiveMeeting(m)}
+                            className="w-full text-left rounded-lg bg-slate-800/80 border border-slate-700 px-3 py-2 hover:bg-slate-800 transition"
+                          >
+                            <p className="text-xs font-semibold text-white truncate">
+                              {m.title}
+                            </p>
+                            <p className="text-[11px] text-slate-300 mt-0.5">
+                              {m.localStartLabel} – {m.localEndLabel} {tzLabel}
+                            </p>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {activeTab === "users" && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-white">
+              Users Metadata Management
+            </h2>
+          </div>
+          <div className="grid grid-cols-1 gap-4">
+            {users.map((u) => {
+              const isEditing = editingUserId === u.id;
               return (
                 <div
-                  key={key}
-                  className="rounded-xl bg-slate-900/80 border border-slate-800 px-3 py-2 flex flex-col min-h-[120px]"
+                  key={u.id}
+                  className="rounded-2xl bg-slate-900 border border-slate-800 p-6 flex flex-col space-y-4"
                 >
-                  <div className="mb-2">
-                    <p className="text-xs font-semibold text-slate-200">{dayName}</p>
-                    <p className="text-xs text-slate-500">{dayDate}</p>
-                  </div>
-                  <div className="space-y-2">
-                    {dayMeetings.map((m) => (
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <h3 className="text-base font-semibold text-white">
+                        {u.name}
+                      </h3>
+                      <p className="text-xs text-slate-400">{u.email}</p>
+                    </div>
+                    {!isEditing && (
                       <button
-                        key={m.id}
-                        type="button"
-                        onClick={() => setActiveMeeting(m)}
-                        className="w-full text-left rounded-lg bg-slate-800/80 border border-slate-700 px-3 py-2 hover:bg-slate-800 transition"
+                        onClick={() => startEditing(u)}
+                        className="mq-btn-secondary h-8 px-3 text-xs"
                       >
-                        <p className="text-xs font-semibold text-white truncate">{m.title}</p>
-                        <p className="text-[11px] text-slate-300 mt-0.5">
-                          {m.localStartLabel} – {m.localEndLabel} {tzLabel}
-                        </p>
+                        Edit Metadata
                       </button>
-                    ))}
+                    )}
                   </div>
+
+                  {isEditing ? (
+                    <div className="space-y-4 pt-2 border-t border-white/[0.05]">
+                      <div>
+                        <label className="mq-label">Description</label>
+                        <textarea
+                          className="w-full min-h-[80px] rounded-lg bg-navy-800 border border-white/[0.1] text-sm p-3 focus:outline-none focus:ring-2 focus:ring-white/15 focus:border-white/20 text-ink-50"
+                          value={editDesc}
+                          onChange={(e) => setEditDesc(e.target.value)}
+                          placeholder="User description..."
+                        />
+                      </div>
+                      <div>
+                        <label className="mq-label">Tags</label>
+                        <div className="flex gap-2 mb-2">
+                          <input
+                            type="text"
+                            className="mq-input flex-1"
+                            value={editTagInput}
+                            onChange={(e) => setEditTagInput(e.target.value)}
+                            placeholder="Add a tag..."
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                handleAddEditTag(e);
+                              }
+                            }}
+                          />
+                          <button
+                            type="button"
+                            onClick={handleAddEditTag}
+                            className="mq-btn-secondary h-10 px-4"
+                          >
+                            Add
+                          </button>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 p-2 rounded-lg border border-white/[0.05] bg-white/[0.01] min-h-[36px]">
+                          {editTags.length === 0 ? (
+                            <span className="text-xs text-slate-500 self-center pl-1">
+                              No tags
+                            </span>
+                          ) : (
+                            editTags.map((tag) => (
+                              <span
+                                key={tag}
+                                className="inline-flex items-center gap-1 rounded-full border border-white/[0.08] bg-white/[0.04] pl-2.5 pr-1.5 py-0.5 text-xs text-slate-300"
+                              >
+                                {tag}
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveEditTag(tag)}
+                                  className="h-4 w-4 rounded-full hover:bg-white/10 text-slate-400 hover:text-white"
+                                >
+                                  ✕
+                                </button>
+                              </span>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex gap-2 justify-end">
+                        <button
+                          onClick={() => setEditingUserId(null)}
+                          className="mq-btn-secondary h-9 px-4 text-xs"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={() => handleSaveUserMetadata(u.id)}
+                          className="mq-btn-primary h-9 px-4 text-xs"
+                        >
+                          Save
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-3 pt-2 border-t border-white/[0.05]">
+                      <div>
+                        <span className="mq-label">Description</span>
+                        <p className="text-sm text-slate-300 bg-slate-950/40 p-2.5 rounded-lg border border-white/[0.02] min-h-[40px]">
+                          {u.description || (
+                            <span className="text-slate-500 italic">
+                              No description set
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                      <div>
+                        <span className="mq-label">Tags</span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {u.tags && u.tags.length > 0 ? (
+                            u.tags.map((t) => (
+                              <span
+                                key={t}
+                                className="inline-flex rounded-full border border-white/[0.08] bg-white/[0.04] px-2.5 py-0.5 text-xs text-slate-300"
+                              >
+                                {t}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-xs text-slate-500 italic">
+                              No tags
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })}
           </div>
+        </div>
+      )}
+
+      {activeTab === "mentors" && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-white">
+              Mentors Metadata Management
+            </h2>
+          </div>
+          <div className="grid grid-cols-1 gap-4">
+            {mentors.map((m) => {
+              const isEditing = editingUserId === m.id;
+              return (
+                <div
+                  key={m.id}
+                  className="rounded-2xl bg-slate-900 border border-slate-800 p-6 flex flex-col space-y-4"
+                >
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <h3 className="text-base font-semibold text-white">
+                        {m.name}
+                      </h3>
+                      <p className="text-xs text-slate-400">{m.email}</p>
+                    </div>
+                    {!isEditing && (
+                      <button
+                        onClick={() => startEditing(m)}
+                        className="mq-btn-secondary h-8 px-3 text-xs"
+                      >
+                        Edit Metadata
+                      </button>
+                    )}
+                  </div>
+
+                  {isEditing ? (
+                    <div className="space-y-4 pt-2 border-t border-white/[0.05]">
+                      <div>
+                        <label className="mq-label">Description</label>
+                        <textarea
+                          className="w-full min-h-[80px] rounded-lg bg-navy-800 border border-white/[0.1] text-sm p-3 focus:outline-none focus:ring-2 focus:ring-white/15 focus:border-white/20 text-ink-50"
+                          value={editDesc}
+                          onChange={(e) => setEditDesc(e.target.value)}
+                          placeholder="Mentor description..."
+                        />
+                      </div>
+                      <div>
+                        <label className="mq-label">Tags</label>
+                        <div className="flex gap-2 mb-2">
+                          <input
+                            type="text"
+                            className="mq-input flex-1"
+                            value={editTagInput}
+                            onChange={(e) => setEditTagInput(e.target.value)}
+                            placeholder="Add a tag..."
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                handleAddEditTag(e);
+                              }
+                            }}
+                          />
+                          <button
+                            type="button"
+                            onClick={handleAddEditTag}
+                            className="mq-btn-secondary h-10 px-4"
+                          >
+                            Add
+                          </button>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 p-2 rounded-lg border border-white/[0.05] bg-white/[0.01] min-h-[36px]">
+                          {editTags.length === 0 ? (
+                            <span className="text-xs text-slate-500 self-center pl-1">
+                              No tags
+                            </span>
+                          ) : (
+                            editTags.map((tag) => (
+                              <span
+                                key={tag}
+                                className="inline-flex items-center gap-1 rounded-full border border-white/[0.08] bg-white/[0.04] pl-2.5 pr-1.5 py-0.5 text-xs text-slate-300"
+                              >
+                                {tag}
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveEditTag(tag)}
+                                  className="h-4 w-4 rounded-full hover:bg-white/10 text-slate-400 hover:text-white"
+                                >
+                                  ✕
+                                </button>
+                              </span>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex gap-2 justify-end">
+                        <button
+                          onClick={() => setEditingUserId(null)}
+                          className="mq-btn-secondary h-9 px-4 text-xs"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={() => handleSaveMentorMetadata(m.id)}
+                          className="mq-btn-primary h-9 px-4 text-xs"
+                        >
+                          Save
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-3 pt-2 border-t border-white/[0.05]">
+                      <div>
+                        <span className="mq-label">Description</span>
+                        <p className="text-sm text-slate-300 bg-slate-950/40 p-2.5 rounded-lg border border-white/[0.02] min-h-[40px]">
+                          {m.description || (
+                            <span className="text-slate-500 italic">
+                              No description set
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                      <div>
+                        <span className="mq-label">Tags</span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {m.tags && m.tags.length > 0 ? (
+                            m.tags.map((t) => (
+                              <span
+                                key={t}
+                                className="inline-flex rounded-full border border-white/[0.08] bg-white/[0.04] px-2.5 py-0.5 text-xs text-slate-300"
+                              >
+                                {t}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-xs text-slate-500 italic">
+                              No tags
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {activeTab === "recommendations" && (
+        <div className="space-y-6">
+          <div className="rounded-2xl bg-slate-900 border border-slate-800 p-6">
+            <h2 className="text-lg font-semibold text-white mb-2">
+              Mentor Recommendations Engine
+            </h2>
+            <p className="text-sm text-slate-400 mb-4">
+              Select a user to find the best matching mentors based on tag
+              overlap and description keyword similarity.
+            </p>
+            <div className="max-w-md">
+              <label className="mq-label">Select User</label>
+              <select
+                value={recUserId}
+                onChange={(e) => setRecUserId(e.target.value)}
+                className="w-full h-11 rounded-lg bg-navy-800 border border-white/[0.1] text-sm px-3 focus:outline-none focus:ring-2 focus:ring-white/15 text-white"
+              >
+                <option value="">Choose a user...</option>
+                {users.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name} ({u.email})
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {recUserId && (
+            <div className="space-y-4">
+              <h3 className="text-base font-semibold text-white">
+                Recommended Mentors
+              </h3>
+              {loadingRecs ? (
+                <div className="text-sm text-slate-400">
+                  Calculating matches...
+                </div>
+              ) : recommendations.length === 0 ? (
+                <div className="text-sm text-slate-500 italic">
+                  No mentors found.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-4">
+                  {recommendations.map((rec) => (
+                    <div
+                      key={rec.mentor.id}
+                      className="rounded-2xl bg-slate-900 border border-slate-800 p-6 flex flex-col md:flex-row gap-6"
+                    >
+                      {/* Score Indicator */}
+                      <div className="flex flex-col items-center justify-center shrink-0 w-24 h-24 rounded-full border border-white/[0.08] bg-white/[0.02]">
+                        <span className="text-2xl font-bold text-white">
+                          {rec.score}%
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider mt-0.5">
+                          Match
+                        </span>
+                      </div>
+
+                      {/* Mentor Details */}
+                      <div className="flex-1 space-y-3">
+                        <div>
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                            <h4 className="text-base font-semibold text-white">
+                              {rec.mentor.name}
+                            </h4>
+                            <span className="text-xs text-slate-500">
+                              ({rec.mentor.email})
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-500 mt-0.5">
+                            Timezone: {rec.mentor.timezone}
+                          </p>
+                        </div>
+
+                        <div>
+                          <span className="mq-label">Mentor Description</span>
+                          <p className="text-sm text-slate-300 bg-slate-950/20 p-2.5 rounded-lg border border-white/[0.02]">
+                            {rec.mentor.description || (
+                              <span className="text-slate-500 italic">
+                                No description set
+                              </span>
+                            )}
+                          </p>
+                        </div>
+
+                        <div>
+                          <span className="mq-label">Mentor Tags</span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {rec.mentor.tags && rec.mentor.tags.length > 0 ? (
+                              rec.mentor.tags.map((t) => {
+                                const isMatched = rec.matchedTags.includes(t);
+                                return (
+                                  <span
+                                    key={t}
+                                    className={`inline-flex rounded-full border px-2.5 py-0.5 text-xs font-medium ${
+                                      isMatched
+                                        ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+                                        : "border-white/[0.08] bg-white/[0.04] text-slate-300"
+                                    }`}
+                                  >
+                                    {t}
+                                  </span>
+                                );
+                              })
+                            ) : (
+                              <span className="text-xs text-slate-500 italic">
+                                No tags
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="rounded-lg bg-white/[0.02] border border-white/[0.05] p-3">
+                          <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 block mb-1">
+                            Matching Explanation
+                          </span>
+                          <p className="text-xs text-slate-300 leading-relaxed">
+                            {rec.explanation}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -1280,12 +2300,18 @@ export default function AdminDashboard() {
                 })}
             </p>
             <p className="text-sm text-slate-200 mb-4">
-              {formatSlotLabel(activeMeeting.startTime, activeMeeting.endTime, displayTimezone)}{" "}
+              {formatSlotLabel(
+                activeMeeting.startTime,
+                activeMeeting.endTime,
+                displayTimezone,
+              )}{" "}
               ({displayTimezone === "IST" ? "IST" : "GMT"})
             </p>
 
             <div className="mb-4">
-              <p className="text-xs font-semibold text-slate-400 mb-1">Attendees</p>
+              <p className="text-xs font-semibold text-slate-400 mb-1">
+                Attendees
+              </p>
               {activeMeeting.participants?.length ? (
                 <ul className="text-xs text-slate-200 space-y-0.5">
                   {activeMeeting.participants.map((p) => (
@@ -1298,7 +2324,9 @@ export default function AdminDashboard() {
             </div>
 
             <div className="mb-4">
-              <p className="text-xs font-semibold text-slate-400 mb-1">Google Meet link</p>
+              <p className="text-xs font-semibold text-slate-400 mb-1">
+                Google Meet link
+              </p>
               {activeMeeting.meetLink ? (
                 <div className="flex items-center gap-2">
                   <a
@@ -1314,26 +2342,37 @@ export default function AdminDashboard() {
                     onClick={() => {
                       if (!activeMeeting) return;
                       const tzLabel =
-                        displayTimezone === "IST" ? "IST (GMT+5:30)" : "GMT (GMT+0)";
+                        displayTimezone === "IST"
+                          ? "IST (GMT+5:30)"
+                          : "GMT (GMT+0)";
                       const datePart = activeMeeting.startTime
-                        ? new Date(activeMeeting.startTime).toLocaleDateString("en-US", {
-                            weekday: "long",
-                            month: "long",
-                            day: "numeric",
-                            timeZone: displayTimezone === "IST" ? "Asia/Kolkata" : "UTC",
-                          })
+                        ? new Date(activeMeeting.startTime).toLocaleDateString(
+                            "en-US",
+                            {
+                              weekday: "long",
+                              month: "long",
+                              day: "numeric",
+                              timeZone:
+                                displayTimezone === "IST"
+                                  ? "Asia/Kolkata"
+                                  : "UTC",
+                            },
+                          )
                         : "";
                       const timeRange =
                         activeMeeting.startTime && activeMeeting.endTime
                           ? formatSlotLabel(
                               activeMeeting.startTime,
                               activeMeeting.endTime,
-                              displayTimezone
+                              displayTimezone,
                             )
                           : "";
                       const attendees =
-                        activeMeeting.participants && activeMeeting.participants.length
-                          ? activeMeeting.participants.map((p) => p.email).join(", ")
+                        activeMeeting.participants &&
+                        activeMeeting.participants.length
+                          ? activeMeeting.participants
+                              .map((p) => p.email)
+                              .join(", ")
                           : "";
                       const lines = [
                         activeMeeting.title || "",
@@ -1393,8 +2432,12 @@ export default function AdminDashboard() {
             className="rounded-2xl bg-slate-900 border border-slate-800 shadow-xl max-w-sm w-full p-6"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-lg font-semibold text-white mb-2">Delete Meeting?</h3>
-            <p className="text-slate-400 text-sm mb-4">This action cannot be undone.</p>
+            <h3 className="text-lg font-semibold text-white mb-2">
+              Delete Meeting?
+            </h3>
+            <p className="text-slate-400 text-sm mb-4">
+              This action cannot be undone.
+            </p>
             <div className="flex gap-2 justify-end">
               <button
                 type="button"

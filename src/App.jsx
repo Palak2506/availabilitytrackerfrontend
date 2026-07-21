@@ -9,6 +9,7 @@ import AdminDashboard from "./pages/AdminDashboard";
 import AdminSettings from "./pages/AdminSettings";
 import AdminSchedules from "./pages/AdminSchedules";
 import Login from "./pages/Login";
+import Profile from "./pages/Profile";
 
 // const WELCOME_PATH = "/welcome";
 
@@ -130,6 +131,14 @@ export default function App() {
             element={
               <ProtectedRoute allowedRoles={["MENTOR"]}>
                 <MentorAvailability />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="profile"
+            element={
+              <ProtectedRoute allowedRoles={["USER", "MENTOR"]}>
+                <Profile />
               </ProtectedRoute>
             }
           />
