@@ -66,7 +66,8 @@ export async function api(method, path, body, options = {}) {
   return data;
 }
 
-export const get = (path) => api("GET", path);
-export const post = (path, body) => api("POST", path, body);
-export const put = (path, body) => api("PUT", path, body);
-export const del = (path) => api("DELETE", path);
+export const get = (path, options = {}) => api("GET", path, null, options);
+export const post = (path, body, options = {}) => api("POST", path, body, options);
+export const put = (path, body, options = {}) => api("PUT", path, body, options);
+export const del = (path, options = {}) => api("DELETE", path, null, options);
+

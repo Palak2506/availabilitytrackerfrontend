@@ -111,7 +111,7 @@ export default function AvailabilityDashboard({
     return () => window.removeEventListener("mouseup", endDrag);
   }, []);
 
-  const fetchWeekly = useCallback(async () => {
+  const fetchWeekly = useCallback(async (signal) => {
     if (!user) return;
     setLoading(true);
     setError("");
@@ -120,12 +120,17 @@ export default function AvailabilityDashboard({
       const params = { weekStart: weekDates[0] };
       if (viewAs?.userId) params.userId = viewAs.userId;
       if (viewAs?.mentorId) params.mentorId = viewAs.mentorId;
-      const res = await availabilityApi.getWeekly(params);
+      const res = await availabilityApi.getWeekly(params, { signal });
       setData(res);
     } catch (e) {
+      if (e.name === "AbortError" || e.message === "The user aborted a request.") {
+        return;
+      }
       setError(e.message || "Failed to load availability");
     } finally {
-      setLoading(false);
+      if (!signal || !signal.aborted) {
+        setLoading(false);
+      }
     }
   }, [weekOffset, user?.id, viewAs?.userId, viewAs?.mentorId]);
 
@@ -134,8 +139,13 @@ export default function AvailabilityDashboard({
   }, [weekOffset, viewAs?.userId, viewAs?.mentorId]);
 
   useEffect(() => {
-    if (user) fetchWeekly();
-  }, [fetchWeekly]);
+    if (!user) return;
+    const controller = new AbortController();
+    fetchWeekly(controller.signal);
+    return () => {
+      controller.abort();
+    };
+  }, [fetchWeekly, user]);
 
   const getSlotMeeting = useCallback((dateStr, hour) => {
     if (!data.meetings || data.meetings.length === 0) return null;

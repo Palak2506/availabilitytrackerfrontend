@@ -777,8 +777,10 @@ export default function AdminDashboard() {
       const localEnd = DateTime.fromISO(slot.endTime, { zone: "utc" }).setZone(
         tz,
       );
-      const localDateKey = localStart.toFormat("yyyy-MM-dd");
-      const dayLabel = localStart.toFormat("ccc, dd LLL");
+      const localDateKey = slot.dateStr || localStart.toFormat("yyyy-MM-dd");
+      const dayLabel = DateTime.fromISO(localDateKey + "T00:00:00", {
+        zone: tz,
+      }).toFormat("ccc, dd LLL");
       const convertedStart = localStart.toFormat("HH:mm");
       const convertedEnd = localEnd.toFormat("HH:mm");
       if (!byDate[localDateKey]) byDate[localDateKey] = { dayLabel, slots: [] };
