@@ -84,6 +84,11 @@ body {
     @apply bg-navy-950/80 ring-1 ring-inset ring-white/[0.04];
   }
 
+  .mq-slot-booked {
+    @apply bg-indigo-500/20 border border-indigo-500/40 cursor-not-allowed
+      shadow-[inset_0_1px_0_rgba(255,255,255,0.05)];
+  }
+
   .mq-scroll {
     scrollbar-width: thin;
     scrollbar-color: #3f3f46 transparent;
