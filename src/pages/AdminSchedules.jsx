@@ -131,7 +131,12 @@ export default function AdminSchedules() {
           Select a user or mentor to view and edit their availability calendar.
         </div>
       ) : (
-        <AvailabilityDashboard role={viewAs.role} viewAs={viewAs} embedded />
+        <AvailabilityDashboard
+          key={viewAs.userId || viewAs.mentorId}
+          role={viewAs.role}
+          viewAs={viewAs}
+          embedded
+        />
       )}
     </div>
   );

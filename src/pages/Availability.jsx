@@ -31,23 +31,32 @@ export default function Availability() {
   const [selectorDate, setSelectorDate] = useState("");
   const [selectorHour, setSelectorHour] = useState(0);
 
-  const fetchWeekly = useCallback(async () => {
+  const fetchWeekly = useCallback(async (signal) => {
     setLoading(true);
     setError("");
     try {
       const weekDates = getViewWeekDates(weekOffset);
-      const res = await availabilityApi.getWeekly({ weekStart: weekDates[0] });
+      const res = await availabilityApi.getWeekly({ weekStart: weekDates[0] }, { signal });
       setData(res);
       setToggles({});
     } catch (e) {
+      if (e.name === "AbortError" || e.message === "The user aborted a request.") {
+        return;
+      }
       setError(e.message || "Failed to load availability");
     } finally {
-      setLoading(false);
+      if (!signal || !signal.aborted) {
+        setLoading(false);
+      }
     }
   }, [weekOffset]);
 
   useEffect(() => {
-    fetchWeekly();
+    const controller = new AbortController();
+    fetchWeekly(controller.signal);
+    return () => {
+      controller.abort();
+    };
   }, [fetchWeekly]);
 
   const isSlotEnabled = (dateStr, hour) => {
